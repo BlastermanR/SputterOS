@@ -227,6 +227,8 @@ All tests run on your host PC — **no embedded hardware or RTOS required**.
 
 See [Testing Guide](docs/TestingGuide.md) and [Formal Test Results](FormalTestResults.md) for details.
 
+Pull requests are validated automatically in GitHub Actions with formatting, unit tests, system tests, example projects, and coverage generation.
+
 ## Project Status
 
 **Stable**

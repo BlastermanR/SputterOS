@@ -81,6 +81,7 @@ git commit -m "Short imperative summary"
    - Code is formatted (`make format`)
    - Documentation is updated when behavior/API changes
    - Safety-relevant changes explain risk and mitigation
+  - GitHub Actions PR checks pass (`format`, `unit-tests`, `system-tests`, `example-projects`, `coverage`)
 5. Address review comments with follow-up commits.
 
 ## PR Review Expectations
@@ -90,6 +91,19 @@ Reviewers will evaluate:
 - Safety implications and fault handling
 - Determinism/non-blocking behavior
 - Test coverage and maintainability
+
+## Automated CI
+
+Every pull request triggers the repository CI workflow on GitHub Actions.
+
+The current PR gate runs on `ubuntu-latest` and checks:
+- Formatting drift via `make format`
+- Host-native unit tests via `make unitTest`
+- Host-native system tests via `make systemTest`
+- Standalone example projects via `make exampleProjects`
+- LLVM coverage generation via `make coverage`
+
+If CI fails, reproduce the relevant command locally before requesting re-review.
 
 ## Reporting Bugs and Security Issues
 
