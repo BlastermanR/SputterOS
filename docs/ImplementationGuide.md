@@ -12,7 +12,9 @@ A step-by-step walkthrough for integrating SputterOS into your vacuum control pr
 4. [Step 3 — Implement HAL Interfaces](#step-3--implement-hal-interfaces)
 5. [Step 4 — Implement IUserApplication](#step-4--implement-iuserapplication)
 6. [Step 5 — Implement IProcessState Phases](#step-5--implement-iprocessstate-phases)
-7. [Step 6 — Implement ISafetyMonitor Adapters](#step-6--implement-isafetymonitor-adapters)7. [Step 6.5 — Register Device Dependencies on Custom Tasks](#step-65--register-device-dependencies-on-custom-tasks)8. [Step 7 — Wire Everything in main.cpp](#step-7--wire-everything-in-maincpp)
+7. [Step 6 — Implement ISafetyMonitor Adapters](#step-6--implement-isafetymonitor-adapters)
+8. [Step 6.5 — Register Device Dependencies on Custom Tasks](#step-65--register-device-dependencies-on-custom-tasks)
+9. [Step 7 — Wire Everything in main.cpp](#step-7--wire-everything-in-maincpp)
 9. [Safety System Reference](#safety-system-reference)
 10. [Serial Command Protocol](#serial-command-protocol)
 11. [TelemetryLogger](#telemetrylogger)
@@ -185,7 +187,7 @@ Replace each stub incrementally as real drivers are written and validated.
 
 ## Step 4 — Implement IUserApplication
 
-`IUserApplication<Cfg>` (`include/sputteros/kernel/IUserApplication.h`) is the primary integration contract. Your concrete class is the process engine that `ControlTask<Cfg>` drives every tick.
+`IUserApplication<Cfg>` (`include/sputteros/kernel/interfaces/IUserApplication.h`) is the primary integration contract. Your concrete class is the process engine that `ControlTask<Cfg>` drives every tick.
 
 > **Note:** The kernel depends only on `IUserApplication<Cfg>`. If your application has internal states, compose a state machine inside your `IUserApplication` implementation (e.g. using `IProcessState` for per-phase logic).
 
@@ -201,7 +203,7 @@ Replace each stub incrementally as real drivers are written and validated.
 ### Example Implementation
 
 ```cpp
-#include "sputteros/kernel/IUserApplication.h"
+#include "sputteros/kernel/interfaces/IUserApplication.h"
 #include "sputteros/interfaces/IProcessState.h"
 #include "config/MyConfig.h"
 
@@ -326,7 +328,7 @@ transitionTo(ROUGHING)
 
 ## Step 6 — Implement ISafetyMonitor Adapters
 
-`ISafetyMonitor` (`include/sputteros/kernel/ISafetyMonitor.h`) is the kernel's generic safety interface. `ControlTask` evaluates all monitors **before** calling `IUserApplication::tick()`. Wrap your safety logic in adapters:
+`ISafetyMonitor` (`include/sputteros/kernel/interfaces/ISafetyMonitor.h`) is the kernel's generic safety interface. `ControlTask` evaluates all monitors **before** calling `IUserApplication::tick()`. Wrap your safety logic in adapters:
 
 ### Interface
 
@@ -338,7 +340,7 @@ transitionTo(ROUGHING)
 ### Example Adapters
 
 ```cpp
-#include "sputteros/kernel/ISafetyMonitor.h"
+#include "sputteros/kernel/interfaces/ISafetyMonitor.h"
 #include "sputteros/logic/InterlockManager.h"
 
 // Wraps InterlockManager

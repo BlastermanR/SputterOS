@@ -496,7 +496,7 @@ int main() {
 
 ### Host Testing (Desktop — Sequential)
 
-All 192 unit tests run on a single-core host using `TestConfig` with `kCoreCount = 1`. Tasks are tested individually; concurrency is not exercised.
+Most host-native unit tests run with `TestConfig` configured for `kCoreCount = 1`, so task behaviour can be validated deterministically without requiring concurrent execution. Multi-core behaviour is then exercised separately by dedicated system tests such as the command-delivery, dual-core pipeline, and multi-core sync suites.
 
 ```cpp
 TEST(MultiCoreQueue, PushPopRoundTrip) {

@@ -19,12 +19,12 @@ NINJA ?= $(PICO_SDK_ROOT)/ninja/v1.12.1/ninja.exe
 BIN_TARGET = SputteringACS.elf
 
 # ────────────────────────────────────────────────────────────────────────────
-# LIBRARY-ONLY BUILD (for use as a submodule in parent projects)
+# LIBRARYONLY BUILD (for use as a submodule in parent projects)
 # ────────────────────────────────────────────────────────────────────────────
 # Build SputterOS library without tests. Used when SputterOS is included via
 # add_subdirectory() in another project (e.g., CMU_HackerFab_Sputtering_Control).
-.PHONY: lib-only
-lib-only:
+.PHONY: libOnly
+libOnly:
 	@echo "Building SputterOS library (tests disabled)..."
 	@mkdir -p $(BUILD_DIR)
 	@cd $(BUILD_DIR) && $(CMAKE) .. -G Ninja -DCMAKE_MAKE_PROGRAM=$(NINJA) -DENABLE_TESTS=OFF && $(NINJA)
@@ -50,7 +50,7 @@ help:
 	@echo "    make unitTest         Run unit tests (single build tree)"
 	@echo "    make systemTest       Run system tests (single build tree)"
 	@echo "    make exampleProjects  Run example projects (heartbeat, etc.)"
-	@echo "    make testFormal       Generate formal test report (CI/CD)"
+	@echo "    make formalTest       Generate formal test report (CI/CD)"
 	@echo ""
 	@echo "  Code Coverage:"
 	@echo "    make coverage         Build all tests with Clang coverage, generate reports (llvm-cov)"

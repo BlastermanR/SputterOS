@@ -52,7 +52,7 @@ SputterOS emerged from the need to control an RF sputtering magnetron on a custo
 ## Key Properties
 
 - **Reusable** across hardware platforms (RP2350, ESP32, STM32, custom boards)
-- **Host-testable** on a desktop PC — 192 unit tests, zero hardware dependencies
+- **Host-testable** on a desktop PC — host-native unit and system tests with zero hardware dependencies
 - **Deterministic** configurable control rate (default 100 Hz) with bounded safety response
 - **Multi-core ready** lock-free SPSC queue with acquire/release atomics
 - **Zero heap allocation** all kernel storage is statically sized from your `Cfg`
@@ -177,9 +177,9 @@ See the [Implementation Guide](docs/ImplementationGuide.md) for the full walkthr
   - 1 dummy HAL stub (`DummyStreamReader`) — start development with no hardware
 
 - **Testing**
-  - 192 unit tests — host-testable with GoogleTest, zero embedded dependencies
-  - 4 build verification tests (32/64-bit × 1/2-core)
-  - 1 system integration test
+  - Host-native GoogleTest/CTest coverage for library logic, kernel tasks, OSAL utilities, and end-to-end pipelines
+  - Dedicated system tests for lifecycle, interlocks, diagnostics, timer rollover, and dual-core flows
+  - Example projects that build and run as standalone smoke tests
 
 ## Documentation
 
@@ -204,34 +204,35 @@ git submodule update --init --recursive
 ## Building and Testing
 
 ```bash
-make test           # Build all 4 variants + run 192 unit tests (fast feedback)
-make testFormal     # Full suite + generate FormalTestResults.md (CI/CD)
+make test           # Run unit tests + system tests + example projects
+make formalTest     # Run full suite and regenerate FormalTestResults.md
 ```
 
 Individual targets:
 ```bash
-make testBuild      # Compile 4 architecture variants (32/64-bit × 1/2-core)
-make runBuildTests  # Execute build test binaries
+make libOnly       # LibraryOnly build (no tests)
 make unitTest       # Build + run GoogleTest suite
 make systemTest     # Build + run system-level integration tests
+make exampleProjects # Build + run standalone example executables
+make coverage       # Generate llvm-cov coverage report
 ```
 
 | Suite | Purpose | Count |
 |---|---|---|
-| **Build Tests** | Compilation across 4 C++17 architecture variants | 4 executables |
-| **Unit Tests** | Core logic, queues, interfaces, safety, command routing | 192 tests |
-| **System Tests** | End-to-end integration (heartbeat verification) | 1 test |
+| **Unit Tests** | Core logic, queues, kernel tasks, HAL/OSAL interfaces | See latest formal report |
+| **System Tests** | End-to-end integration for lifecycle, interlocks, diagnostics, and dual-core flows | See latest formal report |
+| **Example Projects** | Standalone executable smoke tests in `exampleProjects/` | 2 executables |
 
 All tests run on your host PC — **no embedded hardware or RTOS required**.
 
-See [Testing Guide](docs/TestingGuide.md) for details.
+See [Testing Guide](docs/TestingGuide.md) and [Formal Test Results](FormalTestResults.md) for details.
 
 ## Project Status
 
 **Stable**
 - Core architecture finalized: `System<Cfg>` / `SystemBuilder<Cfg>` pattern
 - HAL interfaces, OSAL interfaces, and kernel tasks defined and documented
-- 192 unit tests + 4 build tests + 1 system test passing
+- Host-native test suites and example projects passing
 - Multi-core support validated on RP2350
 
 **In Active Use**
@@ -241,6 +242,9 @@ See [Testing Guide](docs/TestingGuide.md) for details.
 
 SputterOS is actively developed as part of **Carnegie Mellon University's Hacker Fab**. Contributions are welcome:
 
+- Read [Contributing Guide](.github/CONTRIBUTING.md) for setup, coding standards, and PR workflow
+- Follow [Code of Conduct](.github/CODE_OF_CONDUCT.md) in all community interactions
+- Review security posture and reporting limitations in [Security Policy](.github/SECURITY.md)
 - Use SputterOS in your vacuum control project and provide feedback
 - Implement HAL drivers for specialized equipment
 - Share OSAL bindings (FreeRTOS, ThreadX, bare-metal) to help others

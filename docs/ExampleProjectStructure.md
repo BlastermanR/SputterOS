@@ -78,8 +78,9 @@ UserProject/
         │   │   ├── CommsTask.h       # Template: CommsTask<Cfg> (IAsyncTask)
         │   │   ├── ControlTask.h     # Template: ControlTask<Cfg> (ICriticalTask)
         │   │   ├── DiagnosticsTask.h
-        │   │   ├── IUserApplication.h # User-space application interface
-        │   │   ├── ISafetyMonitor.h  # Generic failsafe interface
+        │   │   ├── interfaces/
+        │   │   │   ├── IUserApplication.h # User-space application interface
+        │   │   │   └── ISafetyMonitor.h    # Generic failsafe interface
         │   │   ├── KernelConstructTag.h # PassKey idiom — gates kernel task construction
         │   │   ├── System.h          # System<Cfg> singleton — owns all runtime infrastructure
         │   │   └── TaskTimer.h       # Per-task execution timer
@@ -91,8 +92,7 @@ UserProject/
         │   │   └── CLI.h              # Template: stream + parser + builder wrapper
         │   │
         │   ├── interfaces/           # User-space interfaces
-        │   │   ├── IProcessState.h    # Optional user-space state phase interface
-        │   │   └── IProcessState.h    # Per-phase interface: onEnter/execute/onExit
+        │   │   └── IProcessState.h    # Optional per-phase interface: onEnter/execute/onExit
         │   │
         │   ├── logic/                # Core Logic (supplied, you extend)
         │   │   ├── InterlockManager.h
@@ -128,8 +128,9 @@ UserProject/
         │   │
         │   └── ...
         │
-        ├── tests/                    # SputterOS Unit Tests
-        │   ├── buildTest/
+        ├── tests/                    # SputterOS host-native test suites
+        │   ├── CMakeLists.txt
+        │   ├── systemTests/
         │   └── unit/
         │
         └── docs/                     # SputterOS Documentation

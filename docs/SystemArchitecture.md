@@ -143,12 +143,15 @@ When `IUserApplication` is non-null:
 | `s_sync` | `MultiCoreSync<N>` or `NoOpMultiCoreSync` | Lifecycle barriers (conditional on `kMultiCore`) |
 | `s_errorLogger` | `ErrorLogger` | ISR-safe 32-entry circular fault log |
 | `s_memProfiler` | `MemoryProfiler` | Heap/stack high-water mark tracking |
+| `s_timer` | `SystemTimer` | Kernel-owned wrapper around the injected microsecond source |
 | `s_controlTask` | `std::optional<ControlTask<Cfg>>` | Emplaced by `build()` |
 | `s_commsTask` | `std::optional<CommsTask<Cfg>>` | Emplaced by `build()` |
 | `s_diagsTask` | `std::optional<DiagnosticsTask>` | Emplaced by `build()` |
 | `s_cores[]` | `CoreData[kCoreCount]` | Per-core task lists |
 | `s_allTasks[]` | `ITask*[kMaxTotalTasks]` | Flat task list for diagnostics |
+| `s_allTaskCount` | `std::size_t` | Number of valid entries in `s_allTasks[]` |
 | `s_built` | `bool` | Guard flag set by `build()` |
+| `s_lastTime[]` | `SputterMicros[kCoreCount]` | Last observed tick time per core for rollover detection |
 
 ### Public Static API
 
@@ -159,6 +162,7 @@ When `IUserApplication` is non-null:
 | `commandQueue()` | Access the lock-free command queue |
 | `watchdog()` | Access the inter-core watchdog |
 | `multiCoreSync()` | Access lifecycle barriers (or no-op stub) |
+| `timer()` | Access the kernel-owned `SystemTimer` configured via `SystemBuilder::setClockSource()` |
 | `errorLogger()` | Access the kernel-owned error logger |
 | `memProfiler()` | Access the kernel-owned memory profiler |
 | `isBuilt()` | Query whether `build()` has been called |
