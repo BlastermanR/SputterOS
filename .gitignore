@@ -1,0 +1,12 @@
+# Build Folders
+**/build/
+**/build_coverage/
+
+# Coverage artifacts
+*.profraw
+*.profdata
+coverage_report.txt
+
+# Generated test result files
+FormalTestResults.md
+FormalTestResults.txt
