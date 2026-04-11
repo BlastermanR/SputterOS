@@ -53,7 +53,7 @@ This is acceptable for the current 3-task kernel (ControlTask 100 Hz, CommsTask 
 | Minimum scheduling granularity | **10 µs** (100 kHz tick resolution) |
 | Zero heap allocation | All scheduler state in `inline static` storage |
 | Deterministic worst-case on Core 0 | No priority inversion, no unbounded loops |
-| Backward compatible | Existing `ITask` / `ICriticalTask` / `IAsyncTask` code compiles without modification |
+| Clean break — port all tasks forward | `ICriticalTask` and `IAsyncTask` are retired. All tasks are redesigned as `IScheduledTask` or `IBackgroundTask`. No legacy wrappers or auto-conversion. |
 | Per-core independence | Each Cruncher runs autonomously; no cross-core locking in the fast path |
 | Gap utilization | SMP scheduler fills idle time with background work |
 | Lightweight | < 2 KiB RAM overhead per core for scheduler state |
@@ -361,21 +361,85 @@ The Cruncher reads time from the same injectable `MicrosecondSource` used by the
 - Be callable from any core without locking.
 - Have ≤ 1 µs resolution (most hardware timers satisfy this).
 
+### 6.5 How Task Execution Time is Calculated, Determined, and Set
+
+Task execution time is central to the scheduler. There are three distinct concepts, obtained through different mechanisms:
+
+#### 6.5.1 Measured Execution Time (Runtime — System Clock)
+
+The primary method. `TaskTimer` wraps every `tick()` call with `start()` / `stop()` using the injected `MicrosecondSource`:
+
+```
+timer.start()          // → reads clock source → stores m_start
+task->tick(now)        // → task executes
+timer.stop()           // → reads clock source → elapsed = now - m_start
+                       //   updates lastDuration, maxDuration, average, sampleCount
+```
+
+This is **post-hoc observation** — you learn what the task cost after it ran. The Cruncher uses `lastDuration()` to detect overruns and update the observed WCET.
+
+**Accuracy depends on clock source resolution.** On RP2350 (1 µs timer peripheral), measurement error is ±1 µs. On a platform with only a 1 ms tick, tasks below 1 ms would all measure as 0 — the scheduler would be blind.
+
+#### 6.5.2 Declared WCET (Build-Time — User-Specified)
+
+Each `IScheduledTask` can declare its expected worst-case execution time:
+
+```cpp
+SputterMicros declaredWcetUs() const override { return 50; } // 50 µs max
+```
+
+This is a **contract, not a measurement**. The user asserts "this task will never take more than 50 µs." The scheduler uses it for:
+
+- **Build-time utilization analysis**: `sum(declaredWcet[i] / period[i])` tells whether the schedule is feasible before any code runs.
+- **Runtime enforcement**: If `kStrictWCET` is enabled and measured time exceeds declared WCET, the scheduler can trigger `forceSafeAbort()` for safety-critical slots, or log a fault for others.
+
+If `declaredWcetUs()` returns 0 (the default), the scheduler falls back to auto-profiling from measured data.
+
+#### 6.5.3 Profiled WCET (Runtime — Auto-Observed)
+
+When no declared WCET is provided, the `ScheduleSlot::wcet` field tracks the **observed maximum** from `TaskTimer::maxDuration()`. This is the running high-water mark across all invocations:
+
+```
+if (elapsed > slot.wcet)
+    slot.wcet = elapsed;    // auto-profile: update observed WCET
+```
+
+The profiled WCET grows monotonically during operation. It is useful for diagnostics and runtime utilization reporting, but unreliable for schedulability guarantees — it only reflects the worst case *seen so far*, not the theoretical worst case.
+
+#### 6.5.4 Alternatives to the System Clock
+
+| Method | How It Works | Pros | Cons | Recommendation |
+|--------|-------------|------|------|----------------|
+| **System clock (`MicrosecondSource`)** | Reads platform timer peripheral before/after `tick()` | Universal, no extra hardware, ±1 µs on most MCUs | Two clock reads per task per dispatch (~0.1 µs overhead); blind if clock resolution > scheduling granularity | **Primary method.** Always available, sufficient for ≥ 10 µs scheduling. |
+| **Hardware cycle counter (DWT / SysTick)** | Read ARM `DWT_CYCCNT` (Cortex-M) or RISC-V `mcycle` CSR directly | Sub-nanosecond resolution, zero-overhead read (single instruction), independent of timer peripheral | Architecture-specific, must convert cycles → µs (division by clock MHz), unavailable on some cores (e.g., RP2040 has no DWT on Core 1) | **Optional fast-path override.** Expose as an alternative `MicrosecondSource` for platforms that support it. No scheduler changes needed — just wire a different clock function. |
+| **Hardware timer capture / compare** | Configure a timer peripheral to fire a compare-match interrupt at `nextActivation` | Zero polling overhead — the hardware triggers the scheduler at exactly the right time; sub-µs jitter | Consumes a timer peripheral (scarce resource on small MCUs); ISR context complexity; compare-match setup cost per rescheduling point | **Future enhancement for ISR-driven scheduling.** Would replace the polling Cruncher loop with interrupt-driven dispatch. Out of scope for Phase 1-3 but architecturally compatible — the Cruncher's `tick()` could be called from a timer ISR instead of a polling loop. |
+| **GPIO toggle + oscilloscope** | Toggle a GPIO pin on `tick()` entry/exit, measure pulse width externally | Most accurate real-world measurement; includes cache/interrupt overhead that software timers miss | External equipment required; not usable at runtime; manual / offline only | **Validation tool.** Use during hardware bring-up to calibrate declared WCETs. Not a scheduler input. |
+| **Offline static analysis (WCET tools)** | Tools like aiT, Chronos, or OTAWA analyze the binary to compute a provable WCET bound | Provable upper bound — no measurement uncertainty | Extremely difficult to apply to C++17 with templates, virtual dispatch, and pipeline-dependent MCUs; expensive commercial tooling | **Not practical for SputterOS.** The codebase's heavy template usage and virtual dispatch make static WCET analysis infeasible. Rely on measured + declared WCET. |
+
+#### 6.5.5 Recommended Approach
+
+Use a layered strategy:
+
+1. **Declare WCET** for all safety-critical scheduled tasks during development. Base the declaration on measured data from profiling runs + a safety margin (e.g., 2× measured max).
+2. **Measure at runtime** via `TaskTimer` always. This is free (two clock reads) and feeds the diagnostics system.
+3. **Validate with hardware** (GPIO + scope) during hardware bring-up for the innermost loop tasks where 10 µs budgets leave slim margins.
+4. **Build-time utilization check** uses declared WCETs. If any task lacks a declaration, the tool substitutes the profiled WCET (if available) or flags a warning.
+
 ---
 
 ## 7. Task Model Changes
 
-### 7.1 New Task Classification
+### 7.1 Task Classification — Clean Break
 
-The current hierarchy remains, with additions:
+`ICriticalTask` and `IAsyncTask` are **retired**. Every task in the system is ported forward to one of two new base classes. There is no legacy wrapper, no auto-conversion, and no `addTask()` fallback.
 
 ```
-ITask (base)
-├── ICriticalTask         (Core 0 affinity — unchanged)
-├── IAsyncTask            (Core 1+ affinity — unchanged)
-├── IScheduledTask (NEW)  (Cruncher-managed, has period + priority)
-└── IBackgroundTask (NEW) (SystemScheduler-managed, cooperative)
+ITask (base — lifecycle + device deps + timer)
+├── IScheduledTask    (Cruncher-managed, has period + priority + WCET)
+└── IBackgroundTask   (SystemScheduler-managed, cooperative, time-boxed)
 ```
+
+`ITask` remains as the root interface providing `init()`, `tick()`, `timer()`, and device dependency tracking. It is never registered directly — `SystemBuilder` only accepts `IScheduledTask*` or `IBackgroundTask*`.
 
 ### 7.2 IScheduledTask
 
@@ -385,7 +449,8 @@ public:
     virtual SputterMicros periodUs() const = 0;
     virtual SputterMicros declaredWcetUs() const { return 0; }  // 0 = auto-profile
     virtual uint8_t schedulePriority() const { return 0xFF; }   // 0xFF = auto-assign (RMS)
-    bool isScheduled() const override { return true; }
+    bool isScheduled() const final { return true; }
+    bool isBackground() const final { return false; }
 };
 ```
 
@@ -395,19 +460,30 @@ public:
 class IBackgroundTask : public ITask {
 public:
     virtual SputterMicros maxBudgetUs() const { return 1000; }  // default 1 ms cap
-    bool isBackground() const override { return true; }
+    bool isBackground() const final { return true; }
+    bool isScheduled() const final { return false; }
 };
 ```
 
-### 7.4 Backward Compatibility
+### 7.4 Kernel Task Port-Forward
 
-Existing `ICriticalTask` and `IAsyncTask` implementations are automatically wrapped:
+All three kernel tasks are redesigned to use the new hierarchy directly:
 
-- `ControlTask<Cfg>` (ICriticalTask) → auto-registered as Cruncher Slot 0 on Core 0, period = `kControlBudgetUs`.
-- `CommsTask<Cfg>` (IAsyncTask) → auto-registered as Cruncher slot on Core 1, period = `kCommsBudgetUs` (new config, default 1000 µs = 1 kHz).
-- `DiagnosticsTask` (IAsyncTask) → moved to SystemScheduler background ring.
+| Existing Task | New Base | Ported As | Core | Period |
+|---------------|----------|-----------|------|--------|
+| `ControlTask<Cfg>` | `IScheduledTask` | `ScheduledControlTask<Cfg>` | Core 0, Slot 0 (highest priority) | `kControlBudgetUs` |
+| `CommsTask<Cfg>` | `IScheduledTask` | `ScheduledCommsTask<Cfg>` | Core 1, Slot 0 | `kCommsBudgetUs` |
+| `DiagnosticsTask` | `IBackgroundTask` | `BackgroundDiagnosticsTask` | SystemScheduler ring | `kDiagsBudgetUs` budget |
 
-Plain `ITask` subclasses registered via `core(N).addTask()` are treated as Cruncher slots with period = `kControlBudgetUs` (legacy compatibility mode).
+`ICriticalTask` and `IAsyncTask` are deleted from the codebase. Core affinity is no longer encoded in the type system — it is specified at registration time via `core(N).addScheduledTask()`. The builder enforces that the safety-critical `ScheduledControlTask` is always Slot 0 on Core 0.
+
+### 7.5 User Task Migration
+
+Users must port their tasks:
+
+- **Periodic work** (control loops, sensor polling, protocol handlers) → subclass `IScheduledTask`, implement `periodUs()` and optionally `declaredWcetUs()`.
+- **Best-effort work** (logging, telemetry drain, memory checks, UI updates) → subclass `IBackgroundTask`, implement `maxBudgetUs()`.
+- **`core(N).addTask(ITask*)` is removed.** All registration goes through `addScheduledTask()` or the system-level `addBackgroundTask()`.
 
 ---
 
@@ -442,7 +518,7 @@ static constexpr bool          kKernelStateMachine  = true;     // Enable built-
 | **Gap utilization** | Background tasks automatically fill idle CPU time. No wasted cycles sitting in a `while (!ready)` spin loop. |
 | **Per-core isolation** | Cruncher instances are completely independent. A misbehaving task on Core 1 cannot affect Core 0's scheduling. True AMP partitioning. |
 | **Zero heap** | All state is `inline static` arrays sized by compile-time constants. Fits the existing SputterOS memory model. |
-| **Backward compatible** | Existing code using `ICriticalTask` / `IAsyncTask` / `ITask` compiles without changes. The kernel auto-wraps legacy tasks into schedule slots. |
+| **Clean task model** | Two base classes (`IScheduledTask`, `IBackgroundTask`) replace four (`ITask`, `ICriticalTask`, `IAsyncTask` + new). No ambiguity about which type to subclass. No hidden auto-wrapping behavior. |
 | **Observable** | Every slot tracks WCET, overrun count, deadline misses. DiagnosticsTask (now a background task) can report scheduling health over telemetry. |
 | **Simple mental model** | "Cruncher = fast periodic tasks, SystemScheduler = slow background tasks." No complex priority inheritance, no ceiling protocols, no RTOS jargon. |
 
@@ -454,7 +530,7 @@ static constexpr bool          kKernelStateMachine  = true;     // Enable built-
 | **No dynamic task creation** | All tasks must be registered at build time. Cannot spawn tasks at runtime. **Mitigation:** Enable/disable flag per slot allows runtime activation/deactivation without dynamic allocation. |
 | **Priority inversion within Cruncher** | If a high-priority task is blocked (e.g., waiting on an atomic flag set by a lower-priority task on the same core), the Cruncher cannot resolve this because it's non-preemptive. **Mitigation:** Design constraint — tasks on the same core should not have data dependencies. Use the inter-core `LockFreeQueue` for cross-priority communication. |
 | **Background task starvation** | If Cruncher slots consume 100% of CPU time, background tasks never run. **Mitigation:** Build-time utilization check warns if sum of (WCET/period) exceeds a threshold (e.g., 80%). Reserve explicit gap budget. |
-| **Complexity increase** | More concepts for users to understand (periods, slots, background vs. scheduled). **Mitigation:** Legacy API (`addTask()`) still works with automatic slot assignment. Advanced API is opt-in. |
+| **Breaking change** | All existing user tasks must be ported to `IScheduledTask` or `IBackgroundTask`. **Mitigation:** The new hierarchy is simpler (two choices, not four), and the migration is mechanical — subclass swap + implement `periodUs()` or `maxBudgetUs()`. |
 | **O(n) scan per tick** | For 32 slots, this is ~32 comparisons per scheduling point — negligible on any modern MCU. Only becomes a concern if `kMaxSlotsPerCore` is raised dramatically. |
 | **Cross-core background task synchronization** | Background tasks running on different cores need their own synchronization. **Mitigation:** Atomic running flag prevents concurrent execution. Users own any additional shared state protection. |
 
@@ -642,11 +718,13 @@ static void tick(std::size_t coreId, SputterMicros now) {
 }
 ```
 
-**Backward compatibility**: If no `IScheduledTask`s are registered (pure legacy mode), the Cruncher wraps all `ITask*` entries from `CoreData` as slots with period = `kControlBudgetUs`, preserving existing behavior.
+**No legacy fallback**: `System::tick()` exclusively delegates to the Cruncher. All tasks must be registered as `IScheduledTask` via `core(N).addScheduledTask()` or as `IBackgroundTask` via `addBackgroundTask()`. Calling `tick()` with no registered scheduled tasks results in immediate gap-time yield to the SystemScheduler on every call.
 
 ### 10.5 ITask Hierarchy Updates
 
-#### New virtual methods on `ITask` (default no-op):
+#### ITask base updates:
+
+Add classification queries and lifecycle hooks to `ITask`:
 
 ```cpp
 virtual bool isScheduled() const { return false; }
@@ -654,6 +732,13 @@ virtual bool isBackground() const { return false; }
 virtual void onSuspend() {}     // Called when scheduler suspends this task
 virtual void onResume() {}      // Called when scheduler resumes this task
 ```
+
+Remove `isCritical()` and `isAsync()` from `ITask` — these are retired with `ICriticalTask` / `IAsyncTask`.
+
+#### Deleted base classes:
+
+- `ICriticalTask` — **deleted**. Replaced by `IScheduledTask` with priority 0 on Core 0.
+- `IAsyncTask` — **deleted**. Replaced by `IScheduledTask` (for periodic work) or `IBackgroundTask` (for best-effort work).
 
 #### New base classes:
 
@@ -665,8 +750,7 @@ public:
     virtual SputterMicros declaredWcetUs() const { return 0; }
     virtual uint8_t schedulePriority() const { return 0xFF; }
     bool isScheduled() const final { return true; }
-    bool isCritical() const final { return false; } 
-    bool isAsync() const final { return false; }
+    bool isBackground() const final { return false; }
 };
 ```
 
@@ -676,8 +760,7 @@ class IBackgroundTask : public ITask {
 public:
     virtual SputterMicros maxBudgetUs() const { return 1000; }
     bool isBackground() const final { return true; }
-    bool isCritical() const final { return false; }
-    bool isAsync() const final { return false; }
+    bool isScheduled() const final { return false; }
 };
 ```
 
@@ -686,23 +769,22 @@ public:
 #### New builder API:
 
 ```cpp
-// Scheduled task registration (explicit period)
+// Scheduled task registration
 CoreBuilder& addScheduledTask(IScheduledTask* task);
-
-// Scheduled task registration (wrap legacy ITask with explicit period)
-CoreBuilder& addPeriodicTask(ITask* task, SputterMicros periodUs);
 
 // Background task registration
 SystemBuilder& addBackgroundTask(IBackgroundTask* task);
-SystemBuilder& addBackgroundTask(ITask* task, SputterMicros maxBudgetUs);
 ```
+
+**Removed**: `CoreBuilder::addTask(ITask*)` and `CoreBuilder::addPeriodicTask()` are removed. All tasks must be registered through the typed APIs above.
 
 #### Build-time validation additions:
 
 1. **Period floor check**: `slot.periodUs >= kMinSchedulePeriodUs` for all slots.
 2. **Utilization check**: `sum(wcet[i] / period[i]) < 1.0` per core (warn if > 0.8).
-3. **Core affinity for IScheduledTask**: Allowed on any core (user specifies via `core(N).addScheduledTask()`).
-4. **No duplicate task registration**: Same `ITask*` cannot appear in multiple slots or on multiple cores.
+3. **Core affinity for IScheduledTask**: Specified at registration time via `core(N).addScheduledTask()`, not encoded in the type.
+4. **No duplicate task registration**: Same `IScheduledTask*` cannot appear in multiple slots or on multiple cores.
+5. **No plain ITask registration**: `addTask(ITask*)` is removed; build fails if called.
 5. **Priority uniqueness**: Within a core, warn if two slots have the same priority (resolved by registration order).
 
 #### Automatic slot assignment for kernel tasks:
@@ -710,9 +792,9 @@ SystemBuilder& addBackgroundTask(ITask* task, SputterMicros maxBudgetUs);
 In `build()`, after creating kernel tasks:
 
 ```
-Core 0, Slot 0: ControlTask<Cfg>   period = kControlBudgetUs, priority = 0
-Core 1, Slot 0: CommsTask<Cfg>     period = kCommsBudgetUs,   priority = 0
-Background[0]:  DiagnosticsTask    budget = kDiagsBudgetUs
+Core 0, Slot 0: ScheduledControlTask<Cfg>   period = kControlBudgetUs, priority = 0
+Core 1, Slot 0: ScheduledCommsTask<Cfg>      period = kCommsBudgetUs,   priority = 0
+Background[0]:  BackgroundDiagnosticsTask    budget = kDiagsBudgetUs
 ```
 
 ### 10.7 ConfigTraits & Validator Updates
@@ -769,21 +851,23 @@ template <typename Cfg, typename = void> struct CfgStrictWCET
 4. Extend `TaskTimer` with overrun/deadline-miss counters.
 5. Add new `IScheduledTask` and `IBackgroundTask` base classes.
 6. Add new ConfigTraits SFINAE extractors.
-7. Add `isScheduled()`, `isBackground()`, `onSuspend()`, `onResume()` to `ITask` (all default no-op).
-8. Unit tests for all new types in isolation.
+7. Add `isScheduled()`, `isBackground()`, `onSuspend()`, `onResume()` to `ITask`.
+8. Delete `ICriticalTask` and `IAsyncTask`.
+9. Port `ControlTask` → `ScheduledControlTask`, `CommsTask` → `ScheduledCommsTask`, `DiagnosticsTask` → `BackgroundDiagnosticsTask`.
+10. Update `SystemBuilder` to remove `addTask(ITask*)`, add `addScheduledTask()`, `addBackgroundTask()`.
+11. Port all example projects and tests to new task types.
+12. Unit tests for all new types in isolation.
 
-**Existing tests must still pass.** No behavioral changes to `System::tick()`.
+**This is a breaking change.** All existing tests will be rewritten to use the new task hierarchy.
 
 ### Phase 2: Cruncher Implementation
 
 1. Implement `Cruncher<kMaxSlots>` with slot table, activation scan, dispatch loop.
 2. Add `s_crunchers[kCoreCount]` to `System<Cfg>`.
 3. Refactor `System::tick()` to delegate to Cruncher.
-4. Auto-wrap legacy `ITask*` entries as Cruncher slots (backward compat).
-5. Add `CoreBuilder::addScheduledTask()` and `addPeriodicTask()`.
-6. Build-time validation: period floor, utilization warning.
-7. Unit tests: single-core scheduling, multi-rate, overrun detection, deadline miss handling.
-8. System tests: verify legacy code paths still work via auto-wrapping.
+4. Build-time validation: period floor, utilization warning.
+5. Unit tests: single-core scheduling, multi-rate, overrun detection, deadline miss handling.
+6. System tests: full pipeline with ported kernel tasks.
 
 ### Phase 3: SystemScheduler Implementation
 
@@ -832,7 +916,11 @@ template <typename Cfg, typename = void> struct CfgStrictWCET
 | `KernelState_ValidTransitions` | All valid transitions succeed |
 | `KernelState_InvalidTransitions` | Invalid transitions are rejected and logged |
 | `KernelState_AbortDuringRun` | Safety failure transitions to ABORTING, only safety slot runs |
-| `Legacy_AutoWrap` | Plain `ITask*` registered via `addTask()` becomes Cruncher slot |
+| `Legacy_AutoWrap` | ~~Plain `ITask*` registered via `addTask()` becomes Cruncher slot~~ **Removed** — replaced by `ScheduledControlTask_Registration` below |
+
+| Test | Validates |
+|------|-----------|
+| `ScheduledControlTask_Registration` | `ScheduledControlTask` auto-placed as Slot 0 / Core 0 with correct period |
 
 ### System Tests
 
