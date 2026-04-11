@@ -44,10 +44,10 @@
  */
 
 #include "sputteros/ConfigTraits.h"
-#include "sputteros/kernel/CommsTask.h"
+#include "sputteros/kernel/ScheduledCommsTask.h"
 #include "sputteros/kernel/KernelState.h"
-#include "sputteros/kernel/ControlTask.h"
-#include "sputteros/kernel/DiagnosticsTask.h"
+#include "sputteros/kernel/ScheduledControlTask.h"
+#include "sputteros/kernel/BackgroundDiagnosticsTask.h"
 #include "sputteros/osal/sync/LockFreeQueue.h"
 #include "sputteros/osal/sync/MultiCoreSync.h"
 #include "sputteros/osal/sync/WatchdogSync.h"
@@ -400,9 +400,9 @@ template <typename Cfg> class System
     // Kernel Tasks (emplaced by SystemBuilder::build())
     // =====================================================================
 
-    inline static std::optional<Kernel::ControlTask<Cfg>> s_controlTask{};
-    inline static std::optional<Kernel::CommsTask<Cfg>>   s_commsTask{};
-    inline static std::optional<Kernel::DiagnosticsTask>  s_diagsTask{};
+    inline static std::optional<Kernel::ScheduledControlTask<Cfg>> s_controlTask{};
+    inline static std::optional<Kernel::ScheduledCommsTask<Cfg>>   s_commsTask{};
+    inline static std::optional<Kernel::BackgroundDiagnosticsTask>  s_diagsTask{};
 
     // =====================================================================
     // Per-Core Task Lists

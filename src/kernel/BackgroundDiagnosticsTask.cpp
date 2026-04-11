@@ -1,12 +1,12 @@
 /**
- * @file DiagnosticsTask.cpp
+ * @file BackgroundDiagnosticsTask.cpp
  * @brief Kernel diagnostics and health monitoring task implementation.
  *
  * @author Ryan Massie (rmassie)
  * @date 4/8/2026
  */
 
-#include "sputteros/kernel/DiagnosticsTask.h"
+#include "sputteros/kernel/BackgroundDiagnosticsTask.h"
 #include "sputteros/osal/tasks/ITask.h"
 #include "sputteros/utils/logging/ErrorLogger.h"
 
@@ -15,7 +15,7 @@ namespace SputterOS
 namespace Kernel
 {
 
-DiagnosticsTask::DiagnosticsTask(KernelConstructTag /*tag*/, ErrorLogger &logger, MemoryProfiler &memProfiler,
+BackgroundDiagnosticsTask::BackgroundDiagnosticsTask(KernelConstructTag /*tag*/, ErrorLogger &logger, MemoryProfiler &memProfiler,
                                  WatchdogKickFn watchdogKick, uint32_t controlBudgetUs)
     : m_logger(logger), m_memProfiler(memProfiler), m_watchdogKick(watchdogKick), m_monitoredTasks{},
       m_monitoredCount(0), m_controlBudget(controlBudgetUs), m_tickCount(0)
@@ -23,7 +23,7 @@ DiagnosticsTask::DiagnosticsTask(KernelConstructTag /*tag*/, ErrorLogger &logger
     // Intentionally Empty
 }
 
-void DiagnosticsTask::setMonitoredTasks(ITask *const *tasks, std::size_t count)
+void BackgroundDiagnosticsTask::setMonitoredTasks(ITask *const *tasks, std::size_t count)
 {
     m_monitoredCount = (count < kMaxMonitoredTasks) ? count : kMaxMonitoredTasks;
     for (std::size_t i = 0; i < m_monitoredCount; ++i)
@@ -32,7 +32,7 @@ void DiagnosticsTask::setMonitoredTasks(ITask *const *tasks, std::size_t count)
     }
 }
 
-void DiagnosticsTask::init()
+void BackgroundDiagnosticsTask::init()
 {
     m_memProfiler.reset();
     for (std::size_t i = 0; i < m_monitoredCount; ++i)
@@ -44,7 +44,7 @@ void DiagnosticsTask::init()
     }
 }
 
-void DiagnosticsTask::tick(SputterMicros /*systemTimeMicros*/)
+void BackgroundDiagnosticsTask::tick(SputterMicros /*systemTimeMicros*/)
 {
     if (m_watchdogKick)
     {

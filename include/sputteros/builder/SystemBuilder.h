@@ -234,9 +234,9 @@ template <typename Cfg> class SystemBuilder
      * @brief Construct a SystemBuilder with kernel dependencies.
      *
      * When `app` is non-null, `build()` will create the three kernel
-     * tasks (ControlTask, CommsTask, DiagnosticsTask) and register them
-     * on the correct cores. When `app` is null, the builder operates in
-     * infrastructure-only mode for build-time smoke tests.
+     * tasks (ScheduledControlTask, ScheduledCommsTask, BackgroundDiagnosticsTask)
+     * and register them on the correct cores. When `app` is null, the builder
+     * operates in infrastructure-only mode for build-time smoke tests.
      *
      * @param app: User application ticked by the kernel each cycle (nullable).
      * @param monitors: Array of safety monitors evaluated each tick (nullable if count is 0).
@@ -282,7 +282,7 @@ template <typename Cfg> class SystemBuilder
      * @param watchdogKick: Platform callback to kick the hardware watchdog (nullable).
      * @return Reference to this builder for chaining.
      */
-    SystemBuilder &setWatchdogKick(typename Kernel::DiagnosticsTask::WatchdogKickFn watchdogKick)
+    SystemBuilder &setWatchdogKick(typename Kernel::BackgroundDiagnosticsTask::WatchdogKickFn watchdogKick)
     {
         m_watchdogKick = watchdogKick;
         return *this;
@@ -330,9 +330,9 @@ template <typename Cfg> class SystemBuilder
      *
      * When `app` is non-null, the following kernel tasks are created
      * and pinned automatically:
-     * - `ControlTask` (ICriticalTask) → Core 0
-     * - `CommsTask` (IAsyncTask) → Core 1 (or Core 0 if single-core)
-     * - `DiagnosticsTask` (IAsyncTask) → Core 1 (or Core 0 if single-core)
+     * - `ScheduledControlTask` (IScheduledTask) → Core 0
+     * - `ScheduledCommsTask` (IScheduledTask) → Core 1 (or Core 0 if single-core)
+     * - `BackgroundDiagnosticsTask` (IBackgroundTask) → Core 1 (or Core 0 if single-core)
      *
      * Performs validation:
      * 1. At least one core has tasks (or kernel tasks are being created).
@@ -455,8 +455,13 @@ template <typename Cfg> class SystemBuilder
     // -----------------------------------------------------------------------
 
     /**
-     * @brief Verify that IScheduledTask objects are on Core 0 and
-     *        IBackgroundTask objects are on Core 1 in multi-core configurations.
+     * @brief Verify that IBackgroundTask objects are not on Core 0
+     *        in multi-core configurations.
+     *
+     * IScheduledTask is allowed on any core (each core runs its own
+     * Cruncher in the AMP model). IBackgroundTask must not run on
+     * Core 0 to avoid starving deterministic scheduled work.
+     *
      * @return BuildResult with ok=false if an affinity violation is found.
      */
     BuildResult validateCoreAffinity() const
@@ -468,19 +473,6 @@ template <typename Cfg> class SystemBuilder
             if (tsk && tsk->isBackground())
             {
                 return {false, "Core affinity violation: IBackgroundTask on Core 0"};
-            }
-        }
-
-        // Core 1+ must not contain IScheduledTask
-        for (std::size_t c = 1; c < kCoreCount; ++c)
-        {
-            for (std::size_t t = 0; t < m_cores[c].taskCount(); ++t)
-            {
-                ITask *tsk = m_cores[c].task(t);
-                if (tsk && tsk->isScheduled())
-                {
-                    return {false, "Core affinity violation: IScheduledTask on non-zero core"};
-                }
             }
         }
 
@@ -522,7 +514,7 @@ template <typename Cfg> class SystemBuilder
     std::size_t            m_monitorCount; /**< @brief Number of safety monitors. */
     IStream               *m_stream;       /**< @brief Byte stream for CommsTask. */
 
-    typename Kernel::DiagnosticsTask::WatchdogKickFn m_watchdogKick; /**< @brief Watchdog kick. */
+    typename Kernel::BackgroundDiagnosticsTask::WatchdogKickFn m_watchdogKick; /**< @brief Watchdog kick. */
     MicrosecondSource                                m_clockSource;  /**< @brief Platform \u00b5s clock. */
 
     // -----------------------------------------------------------------------
