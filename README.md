@@ -1,12 +1,26 @@
 # SputterOS
 
-A hardware-agnostic C++17 static library for building deterministic, safe nanofab control systems (~90 KiB).
+A **deterministic, hardware-agnostic C++17 control framework** for high-speed, safety-critical nanofabrication and vacuum systems. Native Asymmetric Multiprocessing (AMP), lock-free polling architecture, and compile-time safety verification eliminate RTOS jitter and concurrency bugs, no bare-metal expertise required. The library is roughly (~70 KiB).
 
 ## What is SputterOS?
 
-SputterOS is a reusable control platform for nanofab systems - sputtering, deposition, etching, analysis instruments, and any vacuum-based equipment. It provides the core infrastructure: a deterministic control loop, multi-tier safety interlocks, command routing, task scheduling, and process execution interfaces.
+SputterOS is a **reusable control platform for nanofab systems**; sputtering, deposition, etching, analysis instruments, and any vacuum-based equipment. It provides deterministic control loop infrastructure, multi-tier safety interlocks, command routing, and process execution interfaces.
 
-**SputterOS touches no hardware directly.** You supply the drivers, process logic, and OS bindings; SputterOS orchestrates them and enforces safety through pure C++ interfaces.
+**SputterOS touches no hardware directly.** You supply HAL drivers and process logic; SputterOS orchestrates them and enforces safety through pure C++ interfaces. Because the entire framework is decoupled from hardware, you can validate your entire control system end-to-end on a desktop PC—no embedded hardware required during development.
+
+### Why SputterOS?
+
+**Microsecond Precision Without RTOS Jitter**  
+Traditional RTOS schedulers introduce unpredictable context-switching overhead. SputterOS uses AMP (Asymmetric Multiprocessing) with a lock-free, polling-based architecture to deliver deterministic, tightly-bounded control loops, perfect for precision tuning and real-time process control.
+
+**Compile-Time Safety, Not Runtime Surprises**  
+SputterOS's `SystemBuilder<Cfg>` pattern shifts dangerous concurrency and configuration mistakes to compile time. Wrong core assignment? Type mismatch? Configuration constraint violation? The compiler catches it. No cryptic deadlocks at 3 AM.
+
+**Zero Bare-Metal Firmware Skills Needed**  
+Lab researchers and control engineers can write safe, microsecond-class control loops in standard C++17 without mastering bare-metal ISR handling, low-level atomics, and hardware-specific quirks. The framework handles the hard parts.
+
+**Zero Hardware Complexity**  
+Develop your entire control system on a standard PC without hardware dependencies. No embedded debugging nightmares, no hardware bring-up delays. Focus purely on process logic and safety rules; SputterOS handles the deterministic scheduling and multi-core coordination. Real hardware integration becomes a trivial HAL layer swap.
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -51,11 +65,13 @@ SputterOS emerged from the need to control an RF sputtering magnetron on a custo
 
 ## Key Properties
 
-- **Reusable** across hardware platforms (RP2350, ESP32, STM32, custom boards)
-- **Host-testable** on a desktop PC — host-native unit and system tests with zero hardware dependencies
-- **Deterministic** configurable control rate (default 100 Hz) with bounded safety response
-- **Multi-core ready** lock-free SPSC queue with acquire/release atomics
-- **Zero heap allocation** all kernel storage is statically sized from your `Cfg`
+- **Deterministic by Architecture** — Configurable control rate (default 100 Hz), lock-free polling, zero RTOS scheduler jitter, bounded safety response times
+- **Asymmetric Multiprocessing (AMP) Native** — Automatic per-core task assignment, lock-free SPSC queue, acquire/release atomics, no global locks
+- **Compile-Time Configuration Safety** — `SystemBuilder<Cfg>` validates topology, task types, and queue capacities at compile time; configuration errors become type errors
+- **Reusable** across hardware platforms (RP2350, ESP32, STM32, ARM Cortex-M, custom boards)
+- **Host-Testable** on a desktop PC — full unit and system test coverage with zero hardware dependencies
+- **Zero-Heap Kernel** — all kernel storage is statically sized; no dynamic allocation in critical path
+- **Safety-Ready** — multi-tier interlocks, microsecond-precision monitoring, deterministic abort handling
 
 ## Architecture Overview
 
