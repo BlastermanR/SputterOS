@@ -54,8 +54,10 @@ UserProject/
         │   │   ├── SputterTime.h      # 32-bit/64-bit duration types & clock
         │   │   ├── tasks/            # Task abstraction layer
         │   │   │   ├── ITask.h        # Base task with device dependency tracking
-        │   │   │   ├── ICriticalTask.h # Deterministic task interface (Core 0)
-        │   │   │   └── IAsyncTask.h   # Best-effort task interface (Core 1)
+        │   │       ├── IScheduledTask.h # Periodic deadline-scheduled task interface
+        │   │       ├── IBackgroundTask.h # Best-effort background task interface
+        │   │       ├── ICriticalTask.h # Compatibility shim for IScheduledTask
+        │   │       └── IAsyncTask.h   # Compatibility shim for IScheduledTask
         │   │   │
         │   │   └── sync/             # Synchronization & queuing primitives
         │   │       ├── IMessageQueue.h    # Template: IMessageQueue<Cfg>
@@ -75,9 +77,11 @@ UserProject/
         │   │   └── README.md
         │   │
         │   ├── kernel/               # Microkernel (constructed via KernelConstructTag PassKey)
-        │   │   ├── CommsTask.h       # Template: CommsTask<Cfg> (IAsyncTask)
-        │   │   ├── ControlTask.h     # Template: ControlTask<Cfg> (ICriticalTask)
-        │   │   ├── DiagnosticsTask.h
+        │   │   ├── ScheduledCommsTask.h  # Template: ScheduledCommsTask<Cfg> (IScheduledTask)
+        │   │   ├── ScheduledControlTask.h # Template: ScheduledControlTask<Cfg> (IScheduledTask)
+        │   │   ├── BackgroundDiagnosticsTask.h # IBackgroundTask
+        │   │   ├── DeadlineTracker.h  # Periodic deadline tracker for the Cruncher
+        │   │   ├── KernelState.h      # Kernel lifecycle state machine
         │   │   ├── interfaces/
         │   │   │   ├── IUserApplication.h # User-space application interface
         │   │   │   └── ISafetyMonitor.h    # Generic failsafe interface

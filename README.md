@@ -99,11 +99,11 @@ Three kernel tasks are auto-assigned by `build()` based on task type:
 
 | Task | Type | Responsibility |
 |---|---|---|
-| `ControlTask<Cfg>` | `ICriticalTask` | Safety monitors → command drain → `IUserApplication::tick()` |
-| `CommsTask<Cfg>` | `IAsyncTask` | Serial byte ingestion → `CommandParser` → queue push |
-| `DiagnosticsTask` | `IAsyncTask` | Watchdog kick, per-task `TaskTimer` budget enforcement, memory profiling |
+| `ScheduledControlTask<Cfg>` | `IScheduledTask` | Safety monitors → command drain → `IUserApplication::tick()` |
+| `ScheduledCommsTask<Cfg>` | `IScheduledTask` | Serial byte ingestion → `CommandParser` → queue push |
+| `BackgroundDiagnosticsTask` | `IBackgroundTask` | Watchdog kick, per-task `TaskTimer` budget enforcement, memory profiling |
 
-In multi-core configurations, `SystemBuilder` automatically assigns `ICriticalTask` to Core 0 and `IAsyncTask` to Core 1. In single-core mode, all tasks run on Core 0.
+In multi-core configurations, `SystemBuilder` automatically assigns `ScheduledControlTask` to Core 0 and `ScheduledCommsTask` to Core 1. In single-core mode, all tasks run on Core 0.
 
 The user provides:
 
@@ -194,8 +194,8 @@ See the [Implementation Guide](docs/ImplementationGuide.md) for the full walkthr
 
 - **Testing**
   - Host-native GoogleTest/CTest coverage for library logic, kernel tasks, OSAL utilities, and end-to-end pipelines
-  - Dedicated system tests for lifecycle, interlocks, diagnostics, timer rollover, and dual-core flows
-  - Example projects that build and run as standalone smoke tests
+  - Dedicated system tests for lifecycle, interlocks, diagnostics, timer rollover, multi-rate scheduling, IO_PENDING coordination, and dual-core flows
+  - Example projects that build and run as standalone smoke tests (multi-rate, IO_PENDING, lifecycle, heartbeat, pingpong)
 
 ## Documentation
 
@@ -204,6 +204,7 @@ See the [Implementation Guide](docs/ImplementationGuide.md) for the full walkthr
 - [Example Project Structure](docs/ExampleProjectStructure.md) — reference directory layout
 - [ISR Methodology](docs/ISRMethodology.md) — interrupt-driven hardware within polling-based control
 - [Multi-Core Implementation](docs/MultiCoreImplementation.md) — distributing SputterOS across CPU cores
+- [Scheduling Design](docs/SchedulingDesign.md) — Dispatch algorithm, task hierarchy, rate-limiting, IO_PENDING, background tasks
 - [Testing Guide](docs/TestingGuide.md) — build verification, unit tests, and formal test reports
 - [Comment Style](docs/CommentStyle.md) — source code comment conventions
 
@@ -236,8 +237,8 @@ make coverage       # Generate llvm-cov coverage report
 | Suite | Purpose | Count |
 |---|---|---|
 | **Unit Tests** | Core logic, queues, kernel tasks, HAL/OSAL interfaces | See latest formal report |
-| **System Tests** | End-to-end integration for lifecycle, interlocks, diagnostics, and dual-core flows | See latest formal report |
-| **Example Projects** | Standalone executable smoke tests in `exampleProjects/` | 2 executables |
+| **System Tests** | End-to-end integration for lifecycle, interlocks, diagnostics, scheduling, and dual-core flows | See latest formal report |
+| **Example Projects** | Standalone executable smoke tests in `exampleProjects/` | 5 executables |
 
 All tests run on your host PC — **no embedded hardware or RTOS required**.
 

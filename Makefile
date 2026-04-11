@@ -173,8 +173,10 @@ coverage:
 		$(CTEST) --output-on-failure || true
 	@echo ""
 	@echo "[4/6] Merging profile data..."
+	@find $(TEST_COV_BUILD_DIR) -maxdepth 1 -name 'coverage-*.profraw' \
+		> $(TEST_COV_BUILD_DIR)/profraw_list.txt
 	@$(LLVM_PROFDATA) merge -sparse \
-		$(TEST_COV_BUILD_DIR)/coverage-*.profraw \
+		-f $(TEST_COV_BUILD_DIR)/profraw_list.txt \
 		-o $(TEST_COV_BUILD_DIR)/coverage.profdata
 	@echo ""
 	@echo "[5/6] Generating text coverage report..."

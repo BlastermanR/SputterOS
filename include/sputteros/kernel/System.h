@@ -451,7 +451,7 @@ template <typename Cfg> class System
      * @brief Attempt a kernel lifecycle state transition.
      *
      * Validates the transition against the allowed transition table
-     * (see docs/Scheduling/AMPSchedulingDesign.md §10.1). Invalid
+     * (see docs/SchedulingDesign.md §7). Invalid
      * transitions are logged to `ErrorLogger` and rejected.
      *
      * @param target Desired next state.

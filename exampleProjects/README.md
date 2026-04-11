@@ -172,19 +172,24 @@ idle gap time via the SystemScheduler.
   whenever no scheduled slots are due, demonstrating that idle CPU time is
   reclaimed without affecting deterministic task deadlines.
 
-**Expected output** (~2.5 seconds):
+**Expected output** (~3 seconds):
 
 ```
-[<ts>][System] Report #1 | samples=50 accum=1225
-[<ts>][System] Report #2 | samples=100 accum=1225
-[<ts>][System] Report #3 | samples=150 accum=1225
-[<ts>][System] Report #4 | samples=200 accum=1225
-[<ts>][System] Report #5 | samples=250 accum=1225
+[<ts>][System] Report #1 | samples=1 accum=0
+[<ts>][System] Report #2 | samples=34 accum=561
+[<ts>][System] Report #3 | samples=66 accum=1584
+[<ts>][System] Report #4 | samples=99 accum=2706
+[<ts>][System] Report #5 | samples=132 accum=595
+[<ts>][System] Report #6 | samples=165 accum=1584
 
 --- MultiRate Summary ---
-Fast samples:         ~250
-Background dispatches: ~2500
+Fast samples:         ~170
+Background dispatches: 0
 ```
+
+> **Note:** Background dispatches will remain 0 until the SystemScheduler
+> (Phase 3) is implemented.  Once gap-time dispatch is active, the
+> `IdleCounterTask` will report ~2 500 dispatches per run.
 
 ---
 
@@ -217,20 +222,24 @@ polls for completion on subsequent ticks without blocking the scheduler.
 - **Background aggregation**: `SensorLogTask` runs in gap time, summarising
   accumulated readings without affecting the polling schedule.
 
-**Expected output** (~1 second, 20 Hz polling):
+**Expected output** (~3 seconds, 20 Hz polling):
 
 ```
-[<ts>][Control] ADC #1 = 0.000 mV
-[<ts>][Control] ADC #2 = 37.000 mV
-[<ts>][Control] ADC #3 = 74.000 mV
-[<ts>][Control] ADC #4 = 111.000 mV
-[<ts>][System]  Sensor log: 5 readings, last=148.000 mV
+[<ts>][ControlTask] ADC #1 = 0.000 mV
+[<ts>][ControlTask] ADC #2 = 37.000 mV
+[<ts>][ControlTask] ADC #3 = 74.000 mV
+[<ts>][ControlTask] ADC #4 = 111.000 mV
+[<ts>][ControlTask] ADC #5 = 148.000 mV
 ...
+[<ts>][ControlTask] ADC #59 = 146.000 mV
 
 --- SensorPoll Summary ---
-ADC readings:  ~20
-Last reading:  xxx.x mV
+ADC readings:  ~59
+Last reading:  146.0 mV
 ```
+
+> **Note:** `SensorLogTask` (background) will produce periodic log summaries
+> once the SystemScheduler (Phase 3) is implemented.
 
 ---
 
@@ -271,10 +280,11 @@ Kernel state after build(): 1
 Kernel state after init():  3
 Both cores running. Main loop for ~3 seconds...
 
-[<ts>][Comms]   [Core 1] State report #1: RUNNING
-[<ts>][Control] [Core 0] Worker tick #1
-[<ts>][Control] [Core 0] Worker tick #2
-[<ts>][Comms]   [Core 1] State report #2: RUNNING
+[<ts>][CommsTask] [Core 1] State report #1: RUNNING
+[<ts>][ControlTask] [Core 0] Worker tick #1
+[<ts>][ControlTask] [Core 0] Worker tick #2
+[<ts>][ControlTask] [Core 0] Worker tick #3
+[<ts>][CommsTask] [Core 1] State report #2: RUNNING
 ...
 
 --- Lifecycle Summary ---
