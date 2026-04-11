@@ -45,6 +45,7 @@
 
 #include "sputteros/ConfigTraits.h"
 #include "sputteros/kernel/CommsTask.h"
+#include "sputteros/kernel/KernelState.h"
 #include "sputteros/kernel/ControlTask.h"
 #include "sputteros/kernel/DiagnosticsTask.h"
 #include "sputteros/osal/sync/LockFreeQueue.h"
@@ -199,6 +200,11 @@ template <typename Cfg> class System
         assert(s_built && "Call SystemBuilder::build() before System::init()");
         if (coreId >= kCoreCount)
             return;
+
+        // Transition to INITIALIZING on first core to call init()
+        if (s_kernelState == Kernel::KernelState::CONFIGURED)
+            transitionTo(Kernel::KernelState::INITIALIZING);
+
         for (std::size_t t = 0; t < s_cores[coreId].taskCount; ++t)
         {
             ITask *tsk = s_cores[coreId].tasks[t];
@@ -207,6 +213,10 @@ template <typename Cfg> class System
                 tsk->init();
             }
         }
+
+        // Transition to RUNNING after tasks initialized
+        if (s_kernelState == Kernel::KernelState::INITIALIZING)
+            transitionTo(Kernel::KernelState::RUNNING);
     }
 
     /**
@@ -312,6 +322,12 @@ template <typename Cfg> class System
     static bool isBuilt() { return s_built; }
 
     /**
+     * @brief Read-only accessor for the current kernel lifecycle state.
+     * @return Current `KernelState` value.
+     */
+    static Kernel::KernelState kernelState() { return s_kernelState; }
+
+    /**
      * @brief Number of tasks registered on a core.
      * @param coreId: Zero-based core identifier.
      */
@@ -363,7 +379,8 @@ template <typename Cfg> class System
         // Reinitialize sync primitives (atomics are not assignable)
         new (&s_watchdog) WatchdogSync<kCoreCount>{};
         new (&s_sync) SyncType{};
-        s_timer = SystemTimer{};
+        s_timer       = SystemTimer{};
+        s_kernelState = Kernel::KernelState::UNCONFIGURED;
     }
 
     // =====================================================================
@@ -399,8 +416,54 @@ template <typename Cfg> class System
     // State
     // =====================================================================
 
-    inline static bool          s_built{false};
-    inline static SputterMicros s_lastTime[kCoreCount]{};
+    inline static bool                  s_built{false};
+    inline static SputterMicros           s_lastTime[kCoreCount]{};
+    inline static Kernel::KernelState     s_kernelState{Kernel::KernelState::UNCONFIGURED};
+
+    // =====================================================================
+    // Kernel State Machine
+    // =====================================================================
+
+    /**
+     * @brief Attempt a kernel lifecycle state transition.
+     *
+     * Validates the transition against the allowed transition table
+     * (see docs/Scheduling/AMPSchedulingDesign.md §10.1). Invalid
+     * transitions are logged to `ErrorLogger` and rejected.
+     *
+     * @param target Desired next state.
+     * @return true if the transition was valid and applied.
+     */
+    static bool transitionTo(Kernel::KernelState target)
+    {
+        using KS = Kernel::KernelState;
+        bool valid = false;
+        switch (s_kernelState)
+        {
+            case KS::UNCONFIGURED:  valid = (target == KS::CONFIGURED); break;
+            case KS::CONFIGURED:    valid = (target == KS::INITIALIZING); break;
+            case KS::INITIALIZING:  valid = (target == KS::RUNNING); break;
+            case KS::RUNNING:       valid = (target == KS::SUSPENDING ||
+                                             target == KS::ABORTING ||
+                                             target == KS::SHUTTING_DOWN); break;
+            case KS::SUSPENDING:    valid = (target == KS::SUSPENDED); break;
+            case KS::SUSPENDED:     valid = (target == KS::RUNNING ||
+                                             target == KS::SHUTTING_DOWN); break;
+            case KS::ABORTING:      valid = (target == KS::ABORTED); break;
+            case KS::ABORTED:       valid = (target == KS::RUNNING ||
+                                             target == KS::SHUTTING_DOWN); break;
+            case KS::SHUTTING_DOWN: valid = (target == KS::SHUTDOWN); break;
+            case KS::SHUTDOWN:      valid = false; break;
+        }
+        if (valid)
+        {
+            s_kernelState = target;
+            return true;
+        }
+        s_errorLogger.log(ErrorLogger::ErrorCode::INVALID_STATE, SputterMicros(0),
+                          static_cast<float>(static_cast<uint8_t>(target)));
+        return false;
+    }
 };
 
 } // namespace SputterOS

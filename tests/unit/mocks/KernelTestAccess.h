@@ -58,6 +58,22 @@ struct KernelTestAccess
      * @brief Reset the System singleton for test re-use between fixtures.
      */
     template <typename Cfg> static void resetSystem() { System<Cfg>::reset(); }
+
+    /**
+     * @brief Reset only the kernel state to UNCONFIGURED for test isolation.
+     */
+    template <typename Cfg> static void resetKernelState()
+    {
+        System<Cfg>::s_kernelState = Kernel::KernelState::UNCONFIGURED;
+    }
+
+    /**
+     * @brief Proxy for System<Cfg>::transitionTo() — test access to private method.
+     */
+    template <typename Cfg> static bool transitionTo(Kernel::KernelState target)
+    {
+        return System<Cfg>::transitionTo(target);
+    }
 };
 
 } // namespace Kernel

@@ -445,6 +445,7 @@ template <typename Cfg> class SystemBuilder
         }
 
         S::s_built = true;
+        S::transitionTo(Kernel::KernelState::CONFIGURED);
         return {true, nullptr};
     }
 
@@ -454,31 +455,31 @@ template <typename Cfg> class SystemBuilder
     // -----------------------------------------------------------------------
 
     /**
-     * @brief Verify that ICriticalTask objects are on Core 0 and
-     *        IAsyncTask objects are on Core 1 in multi-core configurations.
+     * @brief Verify that IScheduledTask objects are on Core 0 and
+     *        IBackgroundTask objects are on Core 1 in multi-core configurations.
      * @return BuildResult with ok=false if an affinity violation is found.
      */
     BuildResult validateCoreAffinity() const
     {
-        // Core 0 must not contain IAsyncTask
+        // Core 0 must not contain IBackgroundTask
         for (std::size_t t = 0; t < m_cores[0].taskCount(); ++t)
         {
             ITask *tsk = m_cores[0].task(t);
-            if (tsk && tsk->isAsync())
+            if (tsk && tsk->isBackground())
             {
-                return {false, "Core affinity violation: IAsyncTask on Core 0"};
+                return {false, "Core affinity violation: IBackgroundTask on Core 0"};
             }
         }
 
-        // Core 1+ must not contain ICriticalTask
+        // Core 1+ must not contain IScheduledTask
         for (std::size_t c = 1; c < kCoreCount; ++c)
         {
             for (std::size_t t = 0; t < m_cores[c].taskCount(); ++t)
             {
                 ITask *tsk = m_cores[c].task(t);
-                if (tsk && tsk->isCritical())
+                if (tsk && tsk->isScheduled())
                 {
-                    return {false, "Core affinity violation: ICriticalTask on non-zero core"};
+                    return {false, "Core affinity violation: IScheduledTask on non-zero core"};
                 }
             }
         }
