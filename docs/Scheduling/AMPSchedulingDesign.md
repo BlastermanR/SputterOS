@@ -170,7 +170,7 @@ struct ScheduleSlot {
     SputterMicros periodUs;         // Activation period in microseconds (≥ 10)
     SputterMicros nextActivation;   // Absolute time of next scheduled run
     SputterMicros wcet;             // Worst-case execution time (observed or declared)
-    SlotState     state;            // IDLE, READY, RUNNING, OVERRUN
+    SlotState     state;            // IDLE, READY, RUNNING, IO_PENDING, OVERRUN
     uint8_t       priority;         // Lower value = higher priority (auto-assigned by period)
     bool          enabled;          // Runtime enable/disable without removing
 };
@@ -237,7 +237,7 @@ Users may override via explicit priority in `CoreBuilder::addScheduledTask()`, b
 |-------|--------|
 | **Task exceeds its period** | Log `TASK_OVERRUN` to `ErrorLogger`. Slot transitions to `OVERRUN` state. Next activation is still advanced to maintain phase alignment. |
 | **Deadline miss (nextActivation in the past after advance)** | Skip missed periods until `nextActivation` is in the future. Log `DEADLINE_MISS` for each skipped period. This prevents cascading catch-up storms. |
-| **Task exceeds user-declared WCET** | Update observed WCET. If a `kStrictWCET` config flag is set, trigger `forceSafeAbort()` on safety-critical tasks. |
+| **Task exceeds user-declared WCET** | Update observed WCET. If a `kStrictWCET` config flag is set, trigger `forceSafeAbort()` on safety-critical tasks. The comparison accounts for ISR overhead: a task is only considered to have genuinely exceeded its WCET if `elapsed > declaredWcet + kIsrContextBudgetUs[coreId]` (see §6.5.6). |
 | **Task throws / faults** | Not applicable (C++17, no exceptions in kernel). |
 
 ### 4.6 Safety Integration
@@ -421,9 +421,68 @@ The profiled WCET grows monotonically during operation. It is useful for diagnos
 Use a layered strategy:
 
 1. **Declare WCET** for all safety-critical scheduled tasks during development. Base the declaration on measured data from profiling runs + a safety margin (e.g., 2× measured max).
-2. **Measure at runtime** via `TaskTimer` always. This is free (two clock reads) and feeds the diagnostics system.
-3. **Validate with hardware** (GPIO + scope) during hardware bring-up for the innermost loop tasks where 10 µs budgets leave slim margins.
-4. **Build-time utilization check** uses declared WCETs. If any task lacks a declaration, the tool substitutes the profiled WCET (if available) or flags a warning.
+2. **Declare ISR budget** per core via `kIsrContextBudgetUs[]` for any core that services interrupts. Measure worst-case ISR latency during hardware bring-up (GPIO + scope on ISR entry/exit). Core 0 defaults to 0 (ISR-free convention). See §6.5.6.
+3. **Measure at runtime** via `TaskTimer` always. This is free (two clock reads) and feeds the diagnostics system.
+4. **Validate with hardware** (GPIO + scope) during hardware bring-up for the innermost loop tasks where 10 µs budgets leave slim margins.
+5. **Build-time utilization check** uses declared WCETs and ISR budgets. The formula `(I_max / P_min) + Σ(C_i / P_i) < 1.0` accounts for both task execution and interrupt overhead per core. If any task lacks a WCET declaration, the tool substitutes the profiled WCET (if available) or flags a warning.
+
+#### 6.5.6 ISR Overhead Accounting
+
+The Cruncher measures task execution time using wall-clock timestamps (`MicrosecondSource`). This measurement is **ISR-blind** — if an interrupt fires during a task's `tick()`, the ISR execution time is included in the measured duration. For slow slots (≥ 1 ms period) this is negligible, but for fast slots (100–200 µs period) even a few microseconds of ISR overhead can cause false overrun alarms or push a task past its deadline.
+
+**Solution**: Declare a per-core ISR context budget — a worst-case upper bound on the total ISR time that can be stolen from a single scheduling period on that core.
+
+```cpp
+// In user Cfg struct:
+static constexpr SputterMicros kIsrContextBudgetUs[kCoreCount] = {0, 5};
+// Core 0: ISR-free (convention), Core 1: up to 5 µs ISR overhead per period
+```
+
+**Build-time utilization formula** incorporates the ISR budget as a virtual highest-priority "task":
+
+```
+U_core = (I_max / P_min) + sum(C_i / P_i) < 1.0
+```
+
+Where:
+- `I_max` = `kIsrContextBudgetUs[coreId]` — worst-case ISR time per period on this core
+- `P_min` = shortest slot period on this core
+- `C_i` / `P_i` = declared WCET / period for each slot
+
+For example, a 100 µs control loop on Core 1 with 5 µs ISR budget:
+
+```
+U_isr = 5 / 100 = 0.05  (5% stolen by ISRs)
+Usable task budget = 100 - 5 = 95 µs
+```
+
+**Runtime overrun check** adjusts the WCET threshold to avoid false positives:
+
+```
+elapsed = task->timer().lastDuration()
+isrBudget = kIsrContextBudgetUs[coreId]
+
+// WCET update uses raw elapsed (conservative — includes ISR time)
+if elapsed > slot.wcet:
+    slot.wcet = elapsed
+
+// Overrun check gives ISR headroom
+if elapsed > slot.periodUs:
+    slot.state = OVERRUN
+else if elapsed > (slot.declaredWcet + isrBudget):
+    // Task itself likely overran — ISR budget can't explain it
+    errorLogger.log(WCET_EXCEEDED, now, elapsed)
+```
+
+The ISR budget is a **declared constant**, not a runtime measurement. It is determined during hardware bring-up by measuring worst-case ISR latency (e.g., GPIO + oscilloscope on ISR entry/exit) and adding a safety margin. This follows the same "declare then validate" pattern used for task WCETs.
+
+**Core 0 convention**: `kIsrContextBudgetUs[0]` defaults to 0. The existing ISR-free Core 0 convention (see [ISRMethodology.md](../ISRMethodology.md)) means no ISR accounting is needed for the deterministic control core. If a platform violates this convention, the user sets a non-zero budget and the math adapts automatically.
+
+| Impact | Without ISR Budget | With ISR Budget |
+|--------|-------------------|------------------|
+| Build-time utilization | Optimistic (ignores ISR steal) | Accurate (accounts for ISR overhead) |
+| Runtime overrun detection | False positives on fast slots | ISR-aware threshold eliminates noise |
+| Diagnostic reporting | Raw utilization only | Separate ISR-adjusted and raw utilization |
 
 ---
 
@@ -501,6 +560,9 @@ static constexpr SputterMicros kDiagsBudgetUs       = 10000;    // DiagnosticsTa
 static constexpr SputterMicros kMinGapSliceUs       = 10;       // Minimum gap for bg task dispatch
 static constexpr bool          kStrictWCET           = false;    // Abort on WCET violation
 
+// ISR Overhead Accounting (see §6.5.6)
+static constexpr SputterMicros kIsrContextBudgetUs[kCoreCount] = {0, 0}; // Per-core ISR budget (µs)
+
 // Kernel State Machine
 static constexpr bool          kKernelStateMachine  = true;     // Enable built-in kernel FSM
 ```
@@ -563,15 +625,28 @@ enum class KernelState : uint8_t {
 
 **Rationale**: The Cruncher needs to know whether to dispatch tasks. During `ABORTING`, only the safety-critical slot (ControlTask abort sequence) should run. During `SUSPENDED`, background tasks can run but Cruncher slots are paused.
 
-**Location**: New `inline static KernelState s_kernelState{KernelState::UNCONFIGURED}` in `System<Cfg>`. Transitions are triggered by:
-- `build()` → CONFIGURED
-- `init()` → INITIALIZING → RUNNING
-- `forceSafeAbort()` on any safety monitor → ABORTING → ABORTED
-- User-initiated pause → SUSPENDING → SUSPENDED
-- User-initiated resume → RUNNING
-- Shutdown request → SHUTTING_DOWN → SHUTDOWN
+**Internal-only design**: `KernelState` is **not a user-configurable parameter**. It is entirely kernel-internal — driven by kernel events, not by user config or user code. Users cannot set, override, or extend the state enum. The transition logic lives inside `System<Cfg>` and is triggered only by kernel operations:
 
-**State transition enforcement**: Only valid transitions are permitted. Invalid transition requests log an `INVALID_STATE_TRANSITION` error and are ignored. The transition table is a compile-time `constexpr` array.
+- `SystemBuilder::build()` → CONFIGURED
+- `System::init()` → INITIALIZING → RUNNING
+- `ControlTask::evaluateSafety()` failure → ABORTING → ABORTED
+- `System::pause()` → SUSPENDING → SUSPENDED
+- `System::resume()` → RUNNING
+- `System::shutdown()` → SHUTTING_DOWN → SHUTDOWN
+
+Users may **query** the current state via `System<Cfg>::kernelState()` (read-only accessor) but cannot write to it. The only user-initiated transitions are through the explicit `System::pause()`, `System::resume()`, and `System::shutdown()` static methods, which validate preconditions before executing. Direct state assignment (`s_kernelState = ...`) is private to `System<Cfg>`.
+
+**Location**: New `inline static KernelState s_kernelState{KernelState::UNCONFIGURED}` in `System<Cfg>`, with a private setter and public getter:
+
+```cpp
+// Public — read-only
+static KernelState kernelState() { return s_kernelState; }
+
+// Private — only System<Cfg> internals can transition
+static bool transitionTo(KernelState target);
+```
+
+**State transition enforcement**: Only valid transitions are permitted. Invalid transition requests log an `INVALID_STATE_TRANSITION` error via `ErrorLogger` and return `false`. The transition table is a compile-time `constexpr` array.
 
 ```
 UNCONFIGURED → CONFIGURED                  (build)
@@ -589,6 +664,8 @@ ABORTED → SHUTTING_DOWN                    (shutdown from abort)
 SHUTTING_DOWN → SHUTDOWN                   (all tasks stopped)
 ```
 
+**Why no user-facing config**: The kernel state machine represents the kernel's own operational lifecycle. Allowing user code to inject states or modify transitions would break the safety invariant — `ABORTING` *must* mean "only the safety slot runs" regardless of what the user wants. User-level process states (e.g., PumpDown, Deposition, Cooldown) belong in `IProcessState`, which is orthogonal to `KernelState`.
+
 ### 10.2 Task State Machine
 
 **Current state**: Tasks have no explicit state — they are either registered or not. `ITask::init()` and `ITask::tick()` are called unconditionally.
@@ -601,10 +678,63 @@ enum class TaskState : uint8_t {
     IDLE,           // Initialized, waiting for next activation
     READY,          // Activation time reached, waiting for dispatch
     RUNNING,        // Currently executing tick()
+    IO_PENDING,     // Task yielded early — waiting for IO completion
     OVERRUN,        // Last tick exceeded period — still scheduled but flagged
     SUSPENDED,      // Temporarily disabled (user or kernel request)
     FAULTED         // Unrecoverable error — will not be scheduled
 };
+```
+
+#### Why IO_PENDING exists (and why BLOCKED does not)
+
+Sputtering machines are IO-heavy: ADC reads, SPI transactions, thermocouple polls, and mass-flow controller queries happen constantly. A traditional `BLOCKED` state — where the scheduler removes the task from the ready set until an external event unblocks it — is **not appropriate** for this workload:
+
+| Concern | Why BLOCKED is wrong | How IO_PENDING solves it |
+|---------|---------------------|-------------------------|
+| **Safety liveness** | A blocked safety-critical task (e.g., ControlTask waiting on a stuck SPI bus) would stop safety evaluation entirely. The scheduler has no timeout — blocked means blocked forever until the event arrives. | IO_PENDING keeps the task in the scheduling rotation. On its next activation, the task re-checks the IO flag and either completes or yields again. Safety evaluation never stalls. |
+| **Non-preemptive scheduler** | BLOCKED requires a wake-up mechanism (ISR callback, event flag) to re-insert the task into the ready queue. In a non-preemptive cooperative scheduler, this means either (a) ISR-driven re-insertion (complex, breaks the no-ISR-in-scheduler contract) or (b) polling anyway — at which point it's not truly blocked. | IO_PENDING is polled naturally by the Cruncher on the next activation. Zero additional infrastructure. |
+| **Determinism** | BLOCKED tasks create unpredictable scheduling gaps — the Cruncher can't compute gap time accurately if it doesn't know when a task will unblock. | IO_PENDING tasks have a known period. The Cruncher always knows when the task's next activation is, whether or not the IO has completed. Gap time calculation remains deterministic. |
+| **Cascade failure** | If a HAL device hangs (e.g., I²C bus lockup), all tasks blocked on that device are permanently stuck. No timeout, no recovery. | IO_PENDING tasks are re-dispatched every period. The task itself implements a timeout (e.g., 3 consecutive IO_PENDING returns → log fault → transition to FAULTED). The scheduler is not responsible for IO timeouts — the task owns its own retry/abort logic. |
+
+#### IO_PENDING semantics
+
+A task signals IO_PENDING by returning early from `tick()` after starting a non-blocking IO operation. The contract:
+
+1. **Task initiates IO** (e.g., calls `adc->startConversion()`) and returns immediately.
+2. **Cruncher marks the slot as IO_PENDING** instead of IDLE.
+3. **On next activation**, the Cruncher dispatches the task normally. The task checks if IO completed:
+   - **Yes** → process result, return normally → Cruncher marks IDLE.
+   - **No** → return early again → Cruncher keeps IO_PENDING.
+4. **WCET still applies** to each `tick()` invocation, including IO_PENDING ticks. A task that spins waiting for IO inside `tick()` will overrun — this is a bug in the task, not a scheduler problem.
+
+```cpp
+// Task-side pattern:
+void tick(SputterMicros now) override {
+    if (m_waitingForAdc) {
+        if (m_adc->isConversionReady()) {
+            float val = m_adc->readResult();
+            m_waitingForAdc = false;
+            // ... process val ...
+        } else {
+            m_ioWaitCount++;
+            if (m_ioWaitCount > kMaxIoRetries) {
+                // IO device hung — report fault, do NOT block forever
+                reportFault(IoTimeout);
+            }
+            return;   // yield early — Cruncher marks IO_PENDING
+        }
+    }
+    // Normal task logic...
+    m_adc->startConversion();
+    m_waitingForAdc = true;
+}
+```
+
+The Cruncher detects IO_PENDING via a return value or flag from the task:
+
+```cpp
+// In IScheduledTask:
+virtual bool isIoPending() const { return false; }  // Override to signal yield
 ```
 
 **Transitions**:
@@ -612,10 +742,12 @@ enum class TaskState : uint8_t {
 UNINITIALIZED → IDLE            (init() completed successfully)
 IDLE → READY                    (nextActivation <= now)
 READY → RUNNING                 (Cruncher dispatches)
-RUNNING → IDLE                  (tick() completes within period)
+RUNNING → IDLE                  (tick() completes, no IO pending)
+RUNNING → IO_PENDING            (tick() returns with IO pending)
 RUNNING → OVERRUN               (tick() exceeds period)
+IO_PENDING → READY              (next activation due — re-dispatch to check IO)
 OVERRUN → READY                 (next activation due)
-IDLE/READY/OVERRUN → SUSPENDED  (user/kernel suspend request)
+IDLE/READY/OVERRUN/IO_PENDING → SUSPENDED  (user/kernel suspend request)
 SUSPENDED → IDLE                (resume request)
 ANY → FAULTED                   (unrecoverable error)
 ```
@@ -781,7 +913,7 @@ SystemBuilder& addBackgroundTask(IBackgroundTask* task);
 #### Build-time validation additions:
 
 1. **Period floor check**: `slot.periodUs >= kMinSchedulePeriodUs` for all slots.
-2. **Utilization check**: `sum(wcet[i] / period[i]) < 1.0` per core (warn if > 0.8).
+2. **Utilization check**: `(kIsrContextBudgetUs[core] / minPeriod) + sum(wcet[i] / period[i]) < 1.0` per core (warn if > 0.8). The ISR budget term accounts for interrupt overhead on cores that service ISRs (see §6.5.6).
 3. **Core affinity for IScheduledTask**: Specified at registration time via `core(N).addScheduledTask()`, not encoded in the type.
 4. **No duplicate task registration**: Same `IScheduledTask*` cannot appear in multiple slots or on multiple cores.
 5. **No plain ITask registration**: `addTask(ITask*)` is removed; build fails if called.
@@ -822,6 +954,12 @@ template <typename Cfg, typename = void> struct CfgMinSchedulePeriodUs
 
 template <typename Cfg, typename = void> struct CfgStrictWCET
 { static constexpr bool value = false; };
+
+// ISR overhead accounting (see §6.5.6)
+// Default: {0, 0, ...} — no ISR overhead assumed
+// Array indexed by core ID, sized to kCoreCount
+template <typename Cfg, typename = void> struct CfgIsrContextBudgetUs
+{ static constexpr SputterMicros value[2] = {0, 0}; };
 ```
 
 ### 10.8 DiagnosticsTask Scheduler Awareness
@@ -832,6 +970,7 @@ template <typename Cfg, typename = void> struct CfgStrictWCET
 
 - Per-slot utilization: `wcet / period` ratio.
 - Per-core total utilization: `sum(wcet / period)`.
+- **ISR-adjusted utilization**: `(kIsrContextBudgetUs[core] / minPeriod) + sum(wcet / period)` — true schedulability metric accounting for interrupt overhead (see §6.5.6).
 - Deadline miss counters per slot.
 - Overrun counters per slot.
 - Background task starvation: time since last background task execution.
