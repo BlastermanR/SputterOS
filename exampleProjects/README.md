@@ -145,6 +145,145 @@ visibility fence — no mutexes required.
 
 ---
 
+### MultiRate
+
+**Purpose:** Demonstrate the Cruncher's multi-rate dispatch — two scheduled
+tasks at different frequencies sharing Core 0, with a background task filling
+idle gap time via the SystemScheduler.
+
+**Tasks running:**
+
+| Core | Task | Type | Rate |
+|------|------|------|------|
+| 0 | `ScheduledControlTask` | Kernel (scheduled) | 100 Hz |
+| 0 | `ScheduledCommsTask` | Kernel (scheduled) | 1 kHz |
+| 0 | `FastSampleTask` | User (scheduled) | 100 Hz (10 ms) |
+| 0 | `SlowReportTask` | User (scheduled) | 2 Hz (500 ms) |
+| 0 | `BackgroundDiagnosticsTask` | Kernel (background) | Gap time |
+| — | `IdleCounterTask` | User (background) | Gap time |
+
+**Key concepts demonstrated:**
+
+- **RMS priority ordering**: `FastSampleTask` (10 ms) gets higher Cruncher
+  priority than `SlowReportTask` (500 ms) — shorter period = higher priority.
+- **Data flow between rates**: `FastSampleTask` accumulates simulated sensor
+  readings; `SlowReportTask` drains the accumulator every 500 ms.
+- **Background gap utilisation**: `IdleCounterTask` runs via SystemScheduler
+  whenever no scheduled slots are due, demonstrating that idle CPU time is
+  reclaimed without affecting deterministic task deadlines.
+
+**Expected output** (~2.5 seconds):
+
+```
+[<ts>][System] Report #1 | samples=50 accum=1225
+[<ts>][System] Report #2 | samples=100 accum=1225
+[<ts>][System] Report #3 | samples=150 accum=1225
+[<ts>][System] Report #4 | samples=200 accum=1225
+[<ts>][System] Report #5 | samples=250 accum=1225
+
+--- MultiRate Summary ---
+Fast samples:         ~250
+Background dispatches: ~2500
+```
+
+---
+
+### SensorPoll
+
+**Purpose:** Demonstrate the `IO_PENDING` non-blocking IO pattern — a
+scheduled task starts a simulated ADC conversion, yields immediately, and
+polls for completion on subsequent ticks without blocking the scheduler.
+
+**Tasks running:**
+
+| Core | Task | Type | Rate |
+|------|------|------|------|
+| 0 | `ScheduledControlTask` | Kernel (scheduled) | 100 Hz |
+| 0 | `ScheduledCommsTask` | Kernel (scheduled) | 1 kHz |
+| 0 | `AdcPollTask` | User (scheduled) | 20 Hz (50 ms) |
+| 0 | `BackgroundDiagnosticsTask` | Kernel (background) | Gap time |
+| — | `SensorLogTask` | User (background) | Gap time |
+
+**Key concepts demonstrated:**
+
+- **IO_PENDING yield**: `AdcPollTask` calls `startConversion()` and returns.
+  The Cruncher marks the slot as `IO_PENDING` (via `isIoPending()`).  On the
+  next activation, the task re-checks `isConversionReady()`.
+- **Fault detection**: If the ADC doesn't respond within `kMaxIoRetries`
+  polls, the task logs a `CRITICAL` fault and resets — safety evaluation is
+  never stalled.
+- **Simulated hardware**: `SimulatedADC` models a 15 ms conversion delay
+  using the platform clock, exercising the real timing relationships.
+- **Background aggregation**: `SensorLogTask` runs in gap time, summarising
+  accumulated readings without affecting the polling schedule.
+
+**Expected output** (~1 second, 20 Hz polling):
+
+```
+[<ts>][Control] ADC #1 = 0.000 mV
+[<ts>][Control] ADC #2 = 37.000 mV
+[<ts>][Control] ADC #3 = 74.000 mV
+[<ts>][Control] ADC #4 = 111.000 mV
+[<ts>][System]  Sensor log: 5 readings, last=148.000 mV
+...
+
+--- SensorPoll Summary ---
+ADC readings:  ~20
+Last reading:  xxx.x mV
+```
+
+---
+
+### Lifecycle
+
+**Purpose:** Demonstrate dual-core AMP scheduling with kernel state machine
+observation.  `WorkerTask` on Core 0 and `MonitorTask` on Core 1 run at
+different frequencies via independent Cruncher instances, with `MonitorTask`
+reading `System<Cfg>::kernelState()` to track lifecycle transitions.
+
+**Tasks running:**
+
+| Core | Task | Type | Rate |
+|------|------|------|------|
+| 0 | `ScheduledControlTask` | Kernel (scheduled) | 100 Hz |
+| 0 | `WorkerTask` | User (scheduled) | 5 Hz (200 ms) |
+| 1 | `ScheduledCommsTask` | Kernel (scheduled) | 1 kHz |
+| 1 | `MonitorTask` | User (scheduled) | 2 Hz (500 ms) |
+| 1 | `BackgroundDiagnosticsTask` | Kernel (background) | Gap time |
+
+**Key concepts demonstrated:**
+
+- **Kernel state observation**: `MonitorTask` calls `System<Cfg>::kernelState()`
+  each tick and logs the state name (`CONFIGURED`, `INITIALIZING`, `RUNNING`).
+- **Dual-core AMP**: Each core has its own Cruncher with independently
+  scheduled tasks.  Core 0's 5 Hz worker is unaffected by Core 1's 2 Hz
+  monitor.
+- **Lifecycle hooks**: `WorkerTask` implements `onSuspend()` and `onResume()`
+  — these will activate once `System::pause()/resume()` are added in Phase 4.
+- **Multi-core barriers**: `MultiCoreSync<2>` synchronises startup and
+  shutdown, preventing Core 1 from ticking before Core 0 is ready.
+
+**Expected output** (~3 seconds):
+
+```
+--- Lifecycle Example: Dual-Core AMP Scheduling ---
+Kernel state after build(): 1
+Kernel state after init():  3
+Both cores running. Main loop for ~3 seconds...
+
+[<ts>][Comms]   [Core 1] State report #1: RUNNING
+[<ts>][Control] [Core 0] Worker tick #1
+[<ts>][Control] [Core 0] Worker tick #2
+[<ts>][Comms]   [Core 1] State report #2: RUNNING
+...
+
+--- Lifecycle Summary ---
+Worker iterations (Core 0): ~15
+Final kernel state:         3
+```
+
+---
+
 ## Adding a New Example Project
 
 1. Create `exampleProjects/<name>/` with the layered structure shown above.
