@@ -96,14 +96,36 @@ class TaskTimer
     bool isOverBudget(SputterMicros budgetUs) const { return m_lastDuration > budgetUs; }
 
     /**
+     * @brief Return the number of recorded tick overruns.
+     */
+    uint32_t overrunCount() const { return m_overrunCount; }
+
+    /**
+     * @brief Return the number of recorded deadline misses.
+     */
+    uint32_t deadlineMissCount() const { return m_deadlineMissCount; }
+
+    /**
+     * @brief Increment the overrun counter by one.
+     */
+    void recordOverrun() { ++m_overrunCount; }
+
+    /**
+     * @brief Increment the deadline-miss counter by one.
+     */
+    void recordDeadlineMiss() { ++m_deadlineMissCount; }
+
+    /**
      * @brief Reset all accumulated timing statistics.
      */
     void reset()
     {
-        m_lastDuration  = 0;
-        m_maxDuration   = 0;
-        m_sumDurationUs = 0;
-        m_sampleCount   = 0;
+        m_lastDuration      = 0;
+        m_maxDuration       = 0;
+        m_sumDurationUs     = 0;
+        m_sampleCount       = 0;
+        m_overrunCount      = 0;
+        m_deadlineMissCount = 0;
     }
 
   private:
@@ -113,6 +135,8 @@ class TaskTimer
     SputterMicros     m_start{0};             /**< @brief Start timestamp of the current tick (µs). */
     uint64_t          m_sumDurationUs{0};     /**< @brief Accumulated sum for average calculation (µs). */
     uint32_t          m_sampleCount{0};       /**< @brief Number of completed timing samples. */
+    uint32_t          m_overrunCount{0};      /**< @brief Number of tick overruns recorded. */
+    uint32_t          m_deadlineMissCount{0}; /**< @brief Number of deadline misses recorded. */
 };
 
 } // namespace Kernel
