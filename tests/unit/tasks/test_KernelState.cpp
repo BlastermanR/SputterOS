@@ -56,8 +56,8 @@ namespace
 template <typename Cfg> void driveToState(KS target)
 {
     // Map: ordered path from UNCONFIGURED to each reachable state
-    constexpr KS fullPath[] = {KS::UNCONFIGURED,  KS::CONFIGURED,   KS::INITIALIZING,
-                               KS::RUNNING,       KS::SUSPENDING,   KS::SUSPENDED};
+    constexpr KS fullPath[] = {KS::UNCONFIGURED, KS::CONFIGURED, KS::INITIALIZING,
+                               KS::RUNNING,      KS::SUSPENDING, KS::SUSPENDED};
 
     // Walk forward through the standard path
     if (target == KS::UNCONFIGURED)

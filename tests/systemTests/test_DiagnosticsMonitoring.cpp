@@ -13,6 +13,7 @@
 
 #include "sputteros/builder/SystemBuilder.h"
 #include "sputteros/kernel/System.h"
+#include "sputteros/osal/tasks/IScheduledTask.h"
 #include "sputteros/utils/logging/ErrorLogger.h"
 
 #include "../../unit/mocks/KernelTestAccess.h"
@@ -30,7 +31,7 @@ using Cfg = SingleCoreConfig;
 
 static uint64_t g_diagClock = 0;
 
-class SlowTask : public ITask
+class SlowTask : public IScheduledTask
 {
   public:
     void init() override {}
@@ -40,6 +41,8 @@ class SlowTask : public ITask
         // Simulate a task that takes desiredDurationUs by advancing clock
         g_diagClock += desiredDurationUs;
     }
+
+    SputterMicros periodUs() const override { return 10000; }
 
     uint64_t desiredDurationUs = 0;
 };
@@ -99,7 +102,7 @@ TEST_F(DiagnosticsMonitoring, BudgetViolationLogsError)
 
     SystemBuilder<Cfg> builder(&app, monitors, 1);
     builder.setStream(&stream).setWatchdogKick(nullptr).setClockSource(clockFn);
-    builder.core(0).addTask(&slowTask);
+    builder.core(0).addScheduledTask(&slowTask);
     ASSERT_TRUE(builder.build());
 
     System<Cfg>::init(0);

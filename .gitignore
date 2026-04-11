@@ -20,4 +20,4 @@ FormalTestResults.txt
 .github/skills/
 
 # Dedicated user instruction space (Put your local working files, agent configs etc here)
-instructions/
+userDocs/

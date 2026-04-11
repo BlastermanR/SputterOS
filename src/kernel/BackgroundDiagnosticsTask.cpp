@@ -15,8 +15,9 @@ namespace SputterOS
 namespace Kernel
 {
 
-BackgroundDiagnosticsTask::BackgroundDiagnosticsTask(KernelConstructTag /*tag*/, ErrorLogger &logger, MemoryProfiler &memProfiler,
-                                 WatchdogKickFn watchdogKick, uint32_t controlBudgetUs)
+BackgroundDiagnosticsTask::BackgroundDiagnosticsTask(KernelConstructTag /*tag*/, ErrorLogger &logger,
+                                                     MemoryProfiler &memProfiler, WatchdogKickFn watchdogKick,
+                                                     uint32_t controlBudgetUs)
     : m_logger(logger), m_memProfiler(memProfiler), m_watchdogKick(watchdogKick), m_monitoredTasks{},
       m_monitoredCount(0), m_controlBudget(controlBudgetUs), m_tickCount(0)
 {

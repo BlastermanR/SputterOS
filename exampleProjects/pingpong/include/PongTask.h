@@ -5,8 +5,8 @@
  * @file PongTask.h
  * @brief Core 1 user task that drives the pong half of the inter-core counter exchange.
  *
- * `PongTask` runs on Core 1 alongside the kernel's `CommsTask` and
- * `DiagnosticsTask`.  When the turn token is released by `PingTask`
+ * `PongTask` runs on Core 1 alongside the kernel's `ScheduledCommsTask` and
+ * `BackgroundDiagnosticsTask`.  When the turn token is released by `PingTask`
  * (`g_pingTurn == false`), `PongTask`:
  *
  *  1. Atomically increments `g_counter` (relaxed: ordering provided by the
@@ -32,7 +32,7 @@
 #include "SharedCounter.h"
 
 #include "sputteros/osal/SputterTime.h"
-#include "sputteros/osal/tasks/ITask.h"
+#include "sputteros/osal/tasks/IScheduledTask.h"
 #include "sputteros/utils/logging/LightweightStringBuilder.h"
 #include "sputteros/utils/logging/TelemetryLogger.h"
 
@@ -48,7 +48,7 @@ namespace PingPong
  * Fires immediately whenever `g_pingTurn == false`, increments the
  * shared counter, logs the result, then returns the token to PingTask.
  */
-class PongTask : public SputterOS::ITask
+class PongTask : public SputterOS::IScheduledTask
 {
   public:
     /**
@@ -56,6 +56,9 @@ class PongTask : public SputterOS::ITask
      * @param telemetry: Core 1 logger — lifetime must exceed this task.
      */
     explicit PongTask(SputterOS::TelemetryLogger &telemetry) : m_telemetry(telemetry), m_pongCount(0) {}
+
+    /** @brief The task's activation period in microseconds. */
+    SputterOS::SputterMicros periodUs() const override { return 10000; }
 
     /**
      * @brief Reset the pong counter.

@@ -122,9 +122,9 @@ class StateMachineApp : public IUserApplication<Cfg>
             m_current->onEnter();
     }
 
-    IdleState    *m_idle;
-    RunningState *m_running;
-    FaultState   *m_fault;
+    IdleState     *m_idle;
+    RunningState  *m_running;
+    FaultState    *m_fault;
     IProcessState *m_current;
 };
 
@@ -144,9 +144,9 @@ class StateMachinePipeline : public ::testing::Test
 
 TEST_F(StateMachinePipeline, InitEntersIdleState)
 {
-    IdleState    idle;
-    RunningState running;
-    FaultState   fault;
+    IdleState       idle;
+    RunningState    running;
+    FaultState      fault;
     StateMachineApp app(&idle, &running, &fault);
 
     FakeStreamReader        stream;
@@ -166,9 +166,9 @@ TEST_F(StateMachinePipeline, InitEntersIdleState)
 
 TEST_F(StateMachinePipeline, TickDrivesCurrentStateExecute)
 {
-    IdleState    idle;
-    RunningState running;
-    FaultState   fault;
+    IdleState       idle;
+    RunningState    running;
+    FaultState      fault;
     StateMachineApp app(&idle, &running, &fault);
 
     FakeStreamReader        stream;
@@ -190,9 +190,9 @@ TEST_F(StateMachinePipeline, TickDrivesCurrentStateExecute)
 
 TEST_F(StateMachinePipeline, CommandTransitionsToRunningState)
 {
-    IdleState    idle;
-    RunningState running;
-    FaultState   fault;
+    IdleState       idle;
+    RunningState    running;
+    FaultState      fault;
     StateMachineApp app(&idle, &running, &fault);
 
     FakeStreamReader        stream;
@@ -213,7 +213,7 @@ TEST_F(StateMachinePipeline, CommandTransitionsToRunningState)
     System<Cfg>::tick(0, SputterMicros(1000));
     System<Cfg>::tick(0, SputterMicros(2000));
 
-    EXPECT_EQ(idle.counters.exitCount, 1u)    << "Idle::onExit() must be called on transition";
+    EXPECT_EQ(idle.counters.exitCount, 1u) << "Idle::onExit() must be called on transition";
     EXPECT_EQ(running.counters.enterCount, 1u) << "Running::onEnter() must be called on transition";
 
     // One more tick should execute RunningState, not IdleState.
@@ -223,14 +223,14 @@ TEST_F(StateMachinePipeline, CommandTransitionsToRunningState)
 
 TEST_F(StateMachinePipeline, SafetyAbortTransitionsToFaultState)
 {
-    IdleState    idle;
-    RunningState running;
-    FaultState   fault;
+    IdleState       idle;
+    RunningState    running;
+    FaultState      fault;
     StateMachineApp app(&idle, &running, &fault);
 
     FakeStreamReader stream;
     TrippableMonitor monitor;
-    monitor.safeFlag        = false; // Immediately unsafe → abort on first tick
+    monitor.safeFlag           = false; // Immediately unsafe → abort on first tick
     ISafetyMonitor *monitors[] = {&monitor};
 
     SystemBuilder<Cfg> builder(&app, monitors, 1);
@@ -240,8 +240,8 @@ TEST_F(StateMachinePipeline, SafetyAbortTransitionsToFaultState)
     System<Cfg>::init(0);
     System<Cfg>::tick(0, SputterMicros(1000));
 
-    EXPECT_GE(app.abortCount, 1u)              << "forceSafeAbort() must be called";
-    EXPECT_EQ(fault.counters.enterCount, 1u)   << "FaultState::onEnter() must be called";
+    EXPECT_GE(app.abortCount, 1u) << "forceSafeAbort() must be called";
+    EXPECT_EQ(fault.counters.enterCount, 1u) << "FaultState::onEnter() must be called";
 
     // A SOFT_ABORT entry must have been logged by the app.
     bool               found = false;

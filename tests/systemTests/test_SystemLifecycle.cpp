@@ -64,7 +64,7 @@ TEST_F(SystemLifecycleSingleCore, InitPropagates)
 
     SystemBuilder<SCfg> builder(&app, monitors, 1);
     builder.setStream(&stream).setWatchdogKick(nullptr);
-    builder.core(0).addTask(&userTask);
+    builder.core(0).addScheduledTask(&userTask);
     ASSERT_TRUE(builder.build());
 
     System<SCfg>::init(0);
@@ -83,7 +83,7 @@ TEST_F(SystemLifecycleSingleCore, TickDeliversTimestamp)
 
     SystemBuilder<SCfg> builder(&app, monitors, 1);
     builder.setStream(&stream).setWatchdogKick(nullptr);
-    builder.core(0).addTask(&userTask);
+    builder.core(0).addScheduledTask(&userTask);
     ASSERT_TRUE(builder.build());
 
     System<SCfg>::init(0);
@@ -109,7 +109,7 @@ TEST_F(SystemLifecycleSingleCore, TickInstrumentsTaskTimers)
 
     SystemBuilder<SCfg> builder(&app, monitors, 1);
     builder.setStream(&stream).setWatchdogKick(nullptr).setClockSource(clockFn);
-    builder.core(0).addTask(&userTask);
+    builder.core(0).addScheduledTask(&userTask);
     ASSERT_TRUE(builder.build());
 
     System<SCfg>::init(0);
@@ -154,7 +154,7 @@ TEST_F(SystemLifecycleSingleCore, InfrastructureOnlyMode)
     InstrumentedTask userTask;
 
     SystemBuilder<SCfg> builder(nullptr, nullptr, 0);
-    builder.core(0).addTask(&userTask);
+    builder.core(0).addScheduledTask(&userTask);
     BuildResult result = builder.build();
 
     EXPECT_TRUE(result.ok) << result.error;
@@ -176,10 +176,10 @@ TEST_F(SystemLifecycleSingleCore, TaskCountReflectsKernelAndUserTasks)
 
     SystemBuilder<SCfg> builder(&app, monitors, 1);
     builder.setStream(&stream).setWatchdogKick(nullptr);
-    builder.core(0).addTask(&userTask);
+    builder.core(0).addScheduledTask(&userTask);
     ASSERT_TRUE(builder.build());
 
-    // Single-core: ControlTask + CommsTask + DiagnosticsTask + userTask = 4
+    // Single-core: ScheduledControlTask + ScheduledCommsTask + BackgroundDiagnosticsTask + userTask = 4
     EXPECT_EQ(System<SCfg>::taskCount(0), 4u);
 }
 
@@ -193,7 +193,7 @@ TEST_F(SystemLifecycleSingleCore, MultipleTicksAccumulateCorrectly)
 
     SystemBuilder<SCfg> builder(&app, monitors, 1);
     builder.setStream(&stream).setWatchdogKick(nullptr);
-    builder.core(0).addTask(&userTask);
+    builder.core(0).addScheduledTask(&userTask);
     ASSERT_TRUE(builder.build());
 
     System<SCfg>::init(0);
@@ -246,9 +246,9 @@ TEST_F(SystemLifecycleDualCore, KernelTasksDistributedAcrossCores)
     builder.setStream(&stream).setWatchdogKick(nullptr);
     ASSERT_TRUE(builder.build());
 
-    // Core 0: ControlTask only
+    // Core 0: ScheduledControlTask only
     EXPECT_EQ(System<DCfg>::taskCount(0), 1u);
 
-    // Core 1: CommsTask + DiagnosticsTask
+    // Core 1: ScheduledCommsTask + BackgroundDiagnosticsTask
     EXPECT_EQ(System<DCfg>::taskCount(1), 2u);
 }

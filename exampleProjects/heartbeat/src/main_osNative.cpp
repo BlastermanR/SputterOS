@@ -13,7 +13,7 @@
  *   SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
  *   builder.setStream(&stdoutStream);
  *   builder.setWatchdogKick(nullptr);
- *   builder.core(0).addTask(&pulseTask);
+ *   builder.core(0).addScheduledTask(&pulseTask);
  *   builder.build();
  *
  *   System<Cfg>::init(0);
@@ -21,9 +21,9 @@
  * @endcode
  *
  * The kernel internally creates and manages:
- *  - `ControlTask<HeartbeatConfig>`  — safety loop (Core 0)
- *  - `CommsTask<HeartbeatConfig>`    — CLI bridge over stdout stream (Core 0)
- *  - `DiagnosticsTask`               — health monitor (Core 0)
+ *  - `ScheduledControlTask<HeartbeatConfig>`  — safety loop (Core 0)
+ *  - `ScheduledCommsTask<HeartbeatConfig>`    — CLI bridge over stdout stream (Core 0)
+ *  - `BackgroundDiagnosticsTask`               — health monitor (Core 0)
  *
  * The user adds one custom task:
  *  - `PulseTask` — emits "Pulse #N" every 500 ms via TelemetryLogger
@@ -79,7 +79,7 @@ int main()
     builder.setWatchdogKick(nullptr);
 
     // Add the custom user task to core 0
-    builder.core(0).addTask(&pulseTask);
+    builder.core(0).addScheduledTask(&pulseTask);
 
     // Validate and finalise
     const BuildResult result = builder.build();

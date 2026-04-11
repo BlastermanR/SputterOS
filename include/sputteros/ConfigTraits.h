@@ -271,8 +271,7 @@ template <typename Cfg, typename = void> struct CfgMaxSlotsPerCore
     static constexpr std::size_t value = 32;
 };
 
-template <typename Cfg>
-struct CfgMaxSlotsPerCore<Cfg, std::void_t<decltype(Cfg::kMaxSlotsPerCore)>>
+template <typename Cfg> struct CfgMaxSlotsPerCore<Cfg, std::void_t<decltype(Cfg::kMaxSlotsPerCore)>>
 {
     static constexpr std::size_t value = Cfg::kMaxSlotsPerCore;
 };
@@ -287,8 +286,7 @@ template <typename Cfg, typename = void> struct CfgMaxBackgroundTasks
     static constexpr std::size_t value = 16;
 };
 
-template <typename Cfg>
-struct CfgMaxBackgroundTasks<Cfg, std::void_t<decltype(Cfg::kMaxBackgroundTasks)>>
+template <typename Cfg> struct CfgMaxBackgroundTasks<Cfg, std::void_t<decltype(Cfg::kMaxBackgroundTasks)>>
 {
     static constexpr std::size_t value = Cfg::kMaxBackgroundTasks;
 };
@@ -303,8 +301,7 @@ template <typename Cfg, typename = void> struct CfgCommsBudgetUs
     static constexpr SputterMicros value = 1000;
 };
 
-template <typename Cfg>
-struct CfgCommsBudgetUs<Cfg, std::void_t<decltype(Cfg::kCommsBudgetUs)>>
+template <typename Cfg> struct CfgCommsBudgetUs<Cfg, std::void_t<decltype(Cfg::kCommsBudgetUs)>>
 {
     static constexpr SputterMicros value = Cfg::kCommsBudgetUs;
 };
@@ -319,8 +316,7 @@ template <typename Cfg, typename = void> struct CfgDiagsBudgetUs
     static constexpr SputterMicros value = 10000;
 };
 
-template <typename Cfg>
-struct CfgDiagsBudgetUs<Cfg, std::void_t<decltype(Cfg::kDiagsBudgetUs)>>
+template <typename Cfg> struct CfgDiagsBudgetUs<Cfg, std::void_t<decltype(Cfg::kDiagsBudgetUs)>>
 {
     static constexpr SputterMicros value = Cfg::kDiagsBudgetUs;
 };
@@ -335,8 +331,7 @@ template <typename Cfg, typename = void> struct CfgMinGapSliceUs
     static constexpr SputterMicros value = 10;
 };
 
-template <typename Cfg>
-struct CfgMinGapSliceUs<Cfg, std::void_t<decltype(Cfg::kMinGapSliceUs)>>
+template <typename Cfg> struct CfgMinGapSliceUs<Cfg, std::void_t<decltype(Cfg::kMinGapSliceUs)>>
 {
     static constexpr SputterMicros value = Cfg::kMinGapSliceUs;
 };
@@ -351,8 +346,7 @@ template <typename Cfg, typename = void> struct CfgMinSchedulePeriodUs
     static constexpr SputterMicros value = 10;
 };
 
-template <typename Cfg>
-struct CfgMinSchedulePeriodUs<Cfg, std::void_t<decltype(Cfg::kMinSchedulePeriodUs)>>
+template <typename Cfg> struct CfgMinSchedulePeriodUs<Cfg, std::void_t<decltype(Cfg::kMinSchedulePeriodUs)>>
 {
     static constexpr SputterMicros value = Cfg::kMinSchedulePeriodUs;
 };
@@ -368,8 +362,7 @@ template <typename Cfg, typename = void> struct CfgStrictWCET
     static constexpr bool value = false;
 };
 
-template <typename Cfg>
-struct CfgStrictWCET<Cfg, std::void_t<decltype(Cfg::kStrictWCET)>>
+template <typename Cfg> struct CfgStrictWCET<Cfg, std::void_t<decltype(Cfg::kStrictWCET)>>
 {
     static constexpr bool value = Cfg::kStrictWCET;
 };
@@ -385,10 +378,9 @@ template <typename Cfg, typename = void> struct CfgIsrContextBudgetUs
     static constexpr SputterMicros value[2] = {0, 0};
 };
 
-template <typename Cfg>
-struct CfgIsrContextBudgetUs<Cfg, std::void_t<decltype(Cfg::kIsrContextBudgetUs[0])>>
+template <typename Cfg> struct CfgIsrContextBudgetUs<Cfg, std::void_t<decltype(Cfg::kIsrContextBudgetUs[0])>>
 {
-    static constexpr auto& value = Cfg::kIsrContextBudgetUs;
+    static constexpr auto &value = Cfg::kIsrContextBudgetUs;
 };
 
 } // namespace SputterOS

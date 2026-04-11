@@ -5,9 +5,9 @@
  * @file PulseTask.h
  * @brief Custom fourth task that emits a periodic "Pulse" heartbeat message.
  *
- * Implements `SputterOS::ITask` to participate in the single-core main
- * loop alongside the three critical tasks (`ControlTask`, `CommsTask`,
- * `DiagnosticsTask`).
+ * Implements `SputterOS::IScheduledTask` to participate in the single-core main
+ * loop alongside the three kernel tasks (`ScheduledControlTask`, `ScheduledCommsTask`,
+ * `BackgroundDiagnosticsTask`).
  *
  * Every `kPulseIntervalUs` microseconds, `PulseTask` logs the message
  * "Pulse" to the shared `TelemetryLogger` under the `SYSTEM` task tag.
@@ -20,7 +20,7 @@
  */
 
 #include "sputteros/osal/SputterTime.h"
-#include "sputteros/osal/tasks/ITask.h"
+#include "sputteros/osal/tasks/IScheduledTask.h"
 #include "sputteros/utils/logging/LightweightStringBuilder.h"
 #include "sputteros/utils/logging/TelemetryLogger.h"
 #include <cstdint>
@@ -35,7 +35,7 @@ namespace Heartbeat
  * values, giving correct rollover behaviour that matches bare-metal
  * timer arithmetic.
  */
-class PulseTask : public SputterOS::ITask
+class PulseTask : public SputterOS::IScheduledTask
 {
   public:
     /** @brief Interval between successive "Pulse" messages (milliseconds). */
@@ -44,6 +44,9 @@ class PulseTask : public SputterOS::ITask
     /** @brief Interval between successive "Pulse" messages (microseconds). */
     static constexpr SputterOS::SputterMicros kPulseIntervalUs =
         static_cast<SputterOS::SputterMicros>(kPulseIntervalMs) * 1000;
+
+    /** @brief The task's activation period in microseconds. */
+    SputterOS::SputterMicros periodUs() const override { return kPulseIntervalUs; }
 
     /**
      * @brief Construct a PulseTask that writes to the given TelemetryLogger.

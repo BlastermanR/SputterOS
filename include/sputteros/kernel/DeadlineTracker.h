@@ -30,9 +30,9 @@ namespace Kernel
  */
 struct DeadlineTracker
 {
-    SputterMicros nextActivation{0};  /**< @brief Absolute time of next run (µs). */
-    SputterMicros periodUs{0};        /**< @brief Repetition period (µs). */
-    SputterMicros phaseOffsetUs{0};   /**< @brief Initial phase offset from epoch (µs). */
+    SputterMicros nextActivation{0}; /**< @brief Absolute time of next run (µs). */
+    SputterMicros periodUs{0};       /**< @brief Repetition period (µs). */
+    SputterMicros phaseOffsetUs{0};  /**< @brief Initial phase offset from epoch (µs). */
 
     /**
      * @brief Initialize the tracker from a given start time.
@@ -72,10 +72,7 @@ struct DeadlineTracker
      * @param now Current monotonic timestamp (µs).
      * @return Microseconds until next activation, or 0 if already overdue.
      */
-    SputterMicros timeUntilNext(SputterMicros now) const
-    {
-        return (nextActivation > now) ? (nextActivation - now) : 0;
-    }
+    SputterMicros timeUntilNext(SputterMicros now) const { return (nextActivation > now) ? (nextActivation - now) : 0; }
 };
 
 } // namespace Kernel

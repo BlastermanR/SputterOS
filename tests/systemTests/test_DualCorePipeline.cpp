@@ -7,7 +7,7 @@
  * - Both cores can call init() concurrently without deadlock.
  * - Commands pre-loaded into the queue by "Core 1" are delivered to the
  *   IUserApplication by ControlTask running on "Core 0".
- * - Core 1 ticking (CommsTask + DiagnosticsTask) concurrently with Core 0
+ * - Core 1 ticking (ScheduledCommsTask + BackgroundDiagnosticsTask) concurrently with Core 0
  *   does not corrupt application state or crash the system.
  * - Commands pushed before concurrent ticking begins are all delivered.
  *
@@ -63,10 +63,12 @@ TEST_F(DualCorePipeline, BothCoresInitWithoutDeadlock)
     bool core0Done = false;
     bool core1Done = false;
 
-    std::thread core1Thread([&]() {
-        System<DCfg>::init(1);
-        core1Done = true;
-    });
+    std::thread core1Thread(
+        [&]()
+        {
+            System<DCfg>::init(1);
+            core1Done = true;
+        });
 
     System<DCfg>::init(0);
     core0Done = true;
@@ -131,13 +133,15 @@ TEST_F(DualCorePipeline, ConcurrentTickBothCoresCompleteWithoutCrash)
 
     std::atomic<bool> core1Done{false};
 
-    std::thread core1Thread([&]() {
-        for (uint64_t t = 1000; t <= 5000; t += 1000)
+    std::thread core1Thread(
+        [&]()
         {
-            System<DCfg>::tick(1, SputterMicros(t));
-        }
-        core1Done.store(true, std::memory_order_release);
-    });
+            for (uint64_t t = 1000; t <= 5000; t += 1000)
+            {
+                System<DCfg>::tick(1, SputterMicros(t));
+            }
+            core1Done.store(true, std::memory_order_release);
+        });
 
     for (uint64_t t = 1000; t <= 5000; t += 1000)
     {
@@ -171,12 +175,14 @@ TEST_F(DualCorePipeline, CommandsDeliveredUnderConcurrentTick)
         System<DCfg>::commandQueue().try_push(cmd);
     }
 
-    std::thread core1Thread([&]() {
-        for (uint64_t t = 1000; t <= 5000; t += 1000)
+    std::thread core1Thread(
+        [&]()
         {
-            System<DCfg>::tick(1, SputterMicros(t));
-        }
-    });
+            for (uint64_t t = 1000; t <= 5000; t += 1000)
+            {
+                System<DCfg>::tick(1, SputterMicros(t));
+            }
+        });
 
     for (uint64_t t = 1000; t <= 5000; t += 1000)
     {

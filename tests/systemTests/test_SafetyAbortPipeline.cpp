@@ -49,7 +49,7 @@ TEST_F(SafetyAbortPipeline, UnsafeMonitorTriggersAbort)
     InstrumentedApp<Cfg> app;
     FakeStreamReader     stream;
     TrippableMonitor     monitor;
-    monitor.safeFlag        = false;
+    monitor.safeFlag           = false;
     ISafetyMonitor *monitors[] = {&monitor};
 
     SystemBuilder<Cfg> builder(&app, monitors, 1);
@@ -87,7 +87,7 @@ TEST_F(SafetyAbortPipeline, MixedMonitorsAbortWhenAnyUnsafe)
     FakeStreamReader        stream;
     AlwaysSafeSafetyMonitor safeMonitor;
     TrippableMonitor        unsafeMonitor;
-    unsafeMonitor.safeFlag      = false;
+    unsafeMonitor.safeFlag     = false;
     ISafetyMonitor *monitors[] = {&safeMonitor, &unsafeMonitor};
 
     SystemBuilder<Cfg> builder(&app, monitors, 2);
@@ -120,7 +120,7 @@ TEST_F(SafetyAbortPipeline, AbortCalledEveryTickWhileUnsafe)
     InstrumentedApp<Cfg> app;
     FakeStreamReader     stream;
     TrippableMonitor     monitor;
-    monitor.safeFlag        = false;
+    monitor.safeFlag           = false;
     ISafetyMonitor *monitors[] = {&monitor};
 
     SystemBuilder<Cfg> builder(&app, monitors, 1);
@@ -142,7 +142,7 @@ TEST_F(SafetyAbortPipeline, ClearingMonitorStopsAbort)
     InstrumentedApp<Cfg> app;
     FakeStreamReader     stream;
     TrippableMonitor     monitor;
-    monitor.safeFlag        = false;
+    monitor.safeFlag           = false;
     ISafetyMonitor *monitors[] = {&monitor};
 
     SystemBuilder<Cfg> builder(&app, monitors, 1);

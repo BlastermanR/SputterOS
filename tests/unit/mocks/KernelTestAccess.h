@@ -1,9 +1,9 @@
 #ifndef SPUTTEROS_UNIT_MOCKS_KERNELTESTACCESS_H
 #define SPUTTEROS_UNIT_MOCKS_KERNELTESTACCESS_H
 
+#include "sputteros/kernel/BackgroundDiagnosticsTask.h"
 #include "sputteros/kernel/ScheduledCommsTask.h"
 #include "sputteros/kernel/ScheduledControlTask.h"
-#include "sputteros/kernel/BackgroundDiagnosticsTask.h"
 #include "sputteros/kernel/System.h"
 
 /**
@@ -41,7 +41,7 @@ struct KernelTestAccess
      */
     template <typename Cfg>
     static ScheduledControlTask<Cfg> makeControlTask(ICommandConsumer<Cfg> *commandQueue, IUserApplication<Cfg> *app,
-                                            ISafetyMonitor **monitors, std::size_t monitorCount)
+                                                     ISafetyMonitor **monitors, std::size_t monitorCount)
     {
         return ScheduledControlTask<Cfg>(KernelConstructTag{}, commandQueue, app, monitors, monitorCount);
     }
@@ -50,7 +50,7 @@ struct KernelTestAccess
      * @brief Construct a BackgroundDiagnosticsTask with the given dependencies.
      */
     static BackgroundDiagnosticsTask makeDiagnosticsTask(ErrorLogger &logger, MemoryProfiler &memProfiler,
-                                               BackgroundDiagnosticsTask::WatchdogKickFn watchdogKick)
+                                                         BackgroundDiagnosticsTask::WatchdogKickFn watchdogKick)
     {
         return BackgroundDiagnosticsTask(KernelConstructTag{}, logger, memProfiler, watchdogKick);
     }
@@ -59,6 +59,16 @@ struct KernelTestAccess
      * @brief Reset the System singleton for test re-use between fixtures.
      */
     template <typename Cfg> static void resetSystem() { System<Cfg>::reset(); }
+
+    /**
+     * @brief Reset only the background task storage.
+     */
+    template <typename Cfg> static void resetBackgroundTasks()
+    {
+        System<Cfg>::s_backgroundTaskCount = 0;
+        for (auto &t : System<Cfg>::s_backgroundTasks)
+            t = nullptr;
+    }
 
     /**
      * @brief Reset only the kernel state to UNCONFIGURED for test isolation.
