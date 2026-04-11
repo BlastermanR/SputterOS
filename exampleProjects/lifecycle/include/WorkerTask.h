@@ -39,8 +39,7 @@ class WorkerTask : public SputterOS::IScheduledTask
      * @brief Construct a WorkerTask.
      * @param telemetry Shared telemetry logger.
      */
-    explicit WorkerTask(SputterOS::TelemetryLogger &telemetry)
-        : m_telemetry(telemetry), m_iterCount(0), m_lastTick(0)
+    explicit WorkerTask(SputterOS::TelemetryLogger &telemetry) : m_telemetry(telemetry), m_iterCount(0), m_lastTick(0)
     {
     }
 
@@ -59,7 +58,8 @@ class WorkerTask : public SputterOS::IScheduledTask
      */
     void tick(SputterOS::SputterMicros systemTimeMicros) override
     {
-        if ((systemTimeMicros - m_lastTick) < kPeriodUs) return;
+        if ((systemTimeMicros - m_lastTick) < kPeriodUs)
+            return;
         m_lastTick = systemTimeMicros;
 
         ++m_iterCount;
@@ -67,10 +67,8 @@ class WorkerTask : public SputterOS::IScheduledTask
         m_builder.clear();
         m_builder.append("[Core 0] Worker tick #").append(m_iterCount);
 
-        m_telemetry.log(SputterOS::TelemetryLogger::TaskID::CONTROL,
-                        m_builder.c_str(),
-                        SputterOS::TelemetryLogger::Verbosity::STATUS,
-                        systemTimeMicros);
+        m_telemetry.log(SputterOS::TelemetryLogger::TaskID::CONTROL, m_builder.c_str(),
+                        SputterOS::TelemetryLogger::Verbosity::STATUS, systemTimeMicros);
     }
 
     /**
@@ -81,8 +79,7 @@ class WorkerTask : public SputterOS::IScheduledTask
         m_builder.clear();
         m_builder.append("[Core 0] Worker SUSPENDED at tick #").append(m_iterCount);
 
-        m_telemetry.log(SputterOS::TelemetryLogger::TaskID::CONTROL,
-                        m_builder.c_str(),
+        m_telemetry.log(SputterOS::TelemetryLogger::TaskID::CONTROL, m_builder.c_str(),
                         SputterOS::TelemetryLogger::Verbosity::STATUS, 0);
     }
 
@@ -94,8 +91,7 @@ class WorkerTask : public SputterOS::IScheduledTask
         m_builder.clear();
         m_builder.append("[Core 0] Worker RESUMED at tick #").append(m_iterCount);
 
-        m_telemetry.log(SputterOS::TelemetryLogger::TaskID::CONTROL,
-                        m_builder.c_str(),
+        m_telemetry.log(SputterOS::TelemetryLogger::TaskID::CONTROL, m_builder.c_str(),
                         SputterOS::TelemetryLogger::Verbosity::STATUS, 0);
     }
 
@@ -104,9 +100,9 @@ class WorkerTask : public SputterOS::IScheduledTask
 
   private:
     SputterOS::TelemetryLogger         &m_telemetry; /**< @brief Telemetry logger. */
-    SputterOS::LightweightStringBuilder m_builder;    /**< @brief Message formatter. */
-    uint32_t                            m_iterCount;  /**< @brief Running tick count. */
-    SputterOS::SputterMicros            m_lastTick;   /**< @brief Last rate-limited tick (µs). */
+    SputterOS::LightweightStringBuilder m_builder;   /**< @brief Message formatter. */
+    uint32_t                            m_iterCount; /**< @brief Running tick count. */
+    SputterOS::SputterMicros            m_lastTick;  /**< @brief Last rate-limited tick (µs). */
 };
 
 } // namespace Lifecycle

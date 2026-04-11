@@ -61,8 +61,8 @@ class AdcPollTask : public SputterOS::IScheduledTask
      * @param adc       Simulated ADC device — lifetime must exceed this task.
      */
     AdcPollTask(SputterOS::TelemetryLogger &telemetry, SimulatedADC &adc)
-        : m_telemetry(telemetry), m_adc(adc), m_waitingForAdc(false),
-          m_ioWaitCount(0), m_readingCount(0), m_lastReading(0.0f)
+        : m_telemetry(telemetry), m_adc(adc), m_waitingForAdc(false), m_ioWaitCount(0), m_readingCount(0),
+          m_lastReading(0.0f)
     {
     }
 
@@ -97,7 +97,8 @@ class AdcPollTask : public SputterOS::IScheduledTask
         // When not waiting for IO, rate-limit to period.
         if (!m_waitingForAdc)
         {
-            if ((systemTimeMicros - m_lastTick) < kPeriodUs) return;
+            if ((systemTimeMicros - m_lastTick) < kPeriodUs)
+                return;
             m_lastTick = systemTimeMicros;
         }
         if (m_waitingForAdc)
@@ -112,16 +113,10 @@ class AdcPollTask : public SputterOS::IScheduledTask
 
                 // Log the reading.
                 m_builder.clear();
-                m_builder.append("ADC #")
-                    .append(m_readingCount)
-                    .append(" = ")
-                    .append(m_lastReading)
-                    .append(" mV");
+                m_builder.append("ADC #").append(m_readingCount).append(" = ").append(m_lastReading).append(" mV");
 
-                m_telemetry.log(SputterOS::TelemetryLogger::TaskID::CONTROL,
-                                m_builder.c_str(),
-                                SputterOS::TelemetryLogger::Verbosity::STATUS,
-                                systemTimeMicros);
+                m_telemetry.log(SputterOS::TelemetryLogger::TaskID::CONTROL, m_builder.c_str(),
+                                SputterOS::TelemetryLogger::Verbosity::STATUS, systemTimeMicros);
             }
             else
             {
@@ -130,14 +125,10 @@ class AdcPollTask : public SputterOS::IScheduledTask
                 {
                     // IO device hung — report fault, do NOT block forever.
                     m_builder.clear();
-                    m_builder.append("ADC TIMEOUT after ")
-                        .append(m_ioWaitCount)
-                        .append(" polls");
+                    m_builder.append("ADC TIMEOUT after ").append(m_ioWaitCount).append(" polls");
 
-                    m_telemetry.log(SputterOS::TelemetryLogger::TaskID::CONTROL,
-                                    m_builder.c_str(),
-                                    SputterOS::TelemetryLogger::Verbosity::CRITICAL,
-                                    systemTimeMicros);
+                    m_telemetry.log(SputterOS::TelemetryLogger::TaskID::CONTROL, m_builder.c_str(),
+                                    SputterOS::TelemetryLogger::Verbosity::CRITICAL, systemTimeMicros);
 
                     m_waitingForAdc = false;
                     m_ioWaitCount   = 0;
@@ -159,7 +150,7 @@ class AdcPollTask : public SputterOS::IScheduledTask
     float lastReading() const { return m_lastReading; }
 
   private:
-    SputterOS::TelemetryLogger         &m_telemetry;    /**< @brief Telemetry logger. */
+    SputterOS::TelemetryLogger         &m_telemetry;     /**< @brief Telemetry logger. */
     SimulatedADC                       &m_adc;           /**< @brief Simulated ADC device. */
     SputterOS::LightweightStringBuilder m_builder;       /**< @brief Message formatter. */
     bool                                m_waitingForAdc; /**< @brief Conversion in flight? */

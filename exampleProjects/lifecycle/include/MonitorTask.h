@@ -59,28 +59,24 @@ class MonitorTask : public SputterOS::IScheduledTask
      */
     void tick(SputterOS::SputterMicros systemTimeMicros) override
     {
-        if ((systemTimeMicros - m_lastTick) < kPeriodUs) return;
+        if ((systemTimeMicros - m_lastTick) < kPeriodUs)
+            return;
         m_lastTick = systemTimeMicros;
-        using Sys = SputterOS::System<LifecycleConfig>;
+        using Sys  = SputterOS::System<LifecycleConfig>;
 
         ++m_reportCount;
 
         const auto state = Sys::kernelState();
 
         m_builder.clear();
-        m_builder.append("[Core 1] State report #")
-            .append(m_reportCount)
-            .append(": ")
-            .append(stateName(state));
+        m_builder.append("[Core 1] State report #").append(m_reportCount).append(": ").append(stateName(state));
 
-        m_telemetry.log(SputterOS::TelemetryLogger::TaskID::COMMS,
-                        m_builder.c_str(),
-                        SputterOS::TelemetryLogger::Verbosity::STATUS,
-                        systemTimeMicros);
+        m_telemetry.log(SputterOS::TelemetryLogger::TaskID::COMMS, m_builder.c_str(),
+                        SputterOS::TelemetryLogger::Verbosity::STATUS, systemTimeMicros);
     }
 
   private:
-    SputterOS::TelemetryLogger         &m_telemetry;  /**< @brief Telemetry logger. */
+    SputterOS::TelemetryLogger         &m_telemetry;   /**< @brief Telemetry logger. */
     SputterOS::LightweightStringBuilder m_builder;     /**< @brief Message formatter. */
     uint32_t                            m_reportCount; /**< @brief Reports emitted. */
     SputterOS::SputterMicros            m_lastTick;    /**< @brief Last rate-limited tick (µs). */
@@ -94,17 +90,28 @@ class MonitorTask : public SputterOS::IScheduledTask
     {
         switch (state)
         {
-        case SputterOS::Kernel::KernelState::UNCONFIGURED:  return "UNCONFIGURED";
-        case SputterOS::Kernel::KernelState::CONFIGURED:     return "CONFIGURED";
-        case SputterOS::Kernel::KernelState::INITIALIZING:   return "INITIALIZING";
-        case SputterOS::Kernel::KernelState::RUNNING:        return "RUNNING";
-        case SputterOS::Kernel::KernelState::SUSPENDING:     return "SUSPENDING";
-        case SputterOS::Kernel::KernelState::SUSPENDED:      return "SUSPENDED";
-        case SputterOS::Kernel::KernelState::ABORTING:       return "ABORTING";
-        case SputterOS::Kernel::KernelState::ABORTED:        return "ABORTED";
-        case SputterOS::Kernel::KernelState::SHUTTING_DOWN:  return "SHUTTING_DOWN";
-        case SputterOS::Kernel::KernelState::SHUTDOWN:       return "SHUTDOWN";
-        default:                                             return "UNKNOWN";
+        case SputterOS::Kernel::KernelState::UNCONFIGURED:
+            return "UNCONFIGURED";
+        case SputterOS::Kernel::KernelState::CONFIGURED:
+            return "CONFIGURED";
+        case SputterOS::Kernel::KernelState::INITIALIZING:
+            return "INITIALIZING";
+        case SputterOS::Kernel::KernelState::RUNNING:
+            return "RUNNING";
+        case SputterOS::Kernel::KernelState::SUSPENDING:
+            return "SUSPENDING";
+        case SputterOS::Kernel::KernelState::SUSPENDED:
+            return "SUSPENDED";
+        case SputterOS::Kernel::KernelState::ABORTING:
+            return "ABORTING";
+        case SputterOS::Kernel::KernelState::ABORTED:
+            return "ABORTED";
+        case SputterOS::Kernel::KernelState::SHUTTING_DOWN:
+            return "SHUTTING_DOWN";
+        case SputterOS::Kernel::KernelState::SHUTDOWN:
+            return "SHUTDOWN";
+        default:
+            return "UNKNOWN";
         }
     }
 };

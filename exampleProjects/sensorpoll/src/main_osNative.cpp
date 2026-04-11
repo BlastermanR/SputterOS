@@ -76,7 +76,7 @@ int main()
     SensorPoll::SimulatedADC adc(15'000, SensorPoll::platformGetTimeMicros);
 
     // -- User tasks ---------------------------------------------------------
-    SensorPoll::AdcPollTask  adcTask(telemetry, adc);
+    SensorPoll::AdcPollTask   adcTask(telemetry, adc);
     SensorPoll::SensorLogTask logTask(telemetry, adcTask);
 
     // -- Build the kernel ---------------------------------------------------

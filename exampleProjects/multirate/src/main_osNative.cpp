@@ -104,8 +104,8 @@ int main()
     static constexpr uint32_t kDrainMs    = 200;
 
     using WallClock  = std::chrono::steady_clock;
-    const auto endAt = WallClock::now() +
-                       std::chrono::milliseconds{kNumReports * (Multirate::SlowReportTask::kPeriodUs / 1000) + kDrainMs};
+    const auto endAt = WallClock::now() + std::chrono::milliseconds{
+                                              kNumReports * (Multirate::SlowReportTask::kPeriodUs / 1000) + kDrainMs};
 
     while (WallClock::now() < endAt)
     {

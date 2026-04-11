@@ -201,10 +201,10 @@ class MultiRatePipelineTest : public ::testing::Test
 
 TEST_F(MultiRatePipelineTest, BuildWithMultiRateTasks_Succeeds)
 {
-    InstrumentedApp<MRCfg1>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<MRCfg1> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
     PipelineFastTask       fast;
     PipelineSlowTask       slow(fast);
@@ -222,10 +222,10 @@ TEST_F(MultiRatePipelineTest, BuildWithMultiRateTasks_Succeeds)
 
 TEST_F(MultiRatePipelineTest, InitPropagates_ToAllTasks)
 {
-    InstrumentedApp<MRCfg1>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<MRCfg1> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
     PipelineFastTask       fast;
     PipelineSlowTask       slow(fast);
@@ -248,13 +248,13 @@ TEST_F(MultiRatePipelineTest, InitPropagates_ToAllTasks)
 
 TEST_F(MultiRatePipelineTest, TickLoop_FastTaskSamples)
 {
-    InstrumentedApp<MRCfg1>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<MRCfg1> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
-    PipelineFastTask       fast;
-    PipelineSlowTask       slow(fast);
+    PipelineFastTask fast;
+    PipelineSlowTask slow(fast);
 
     SystemBuilder<MRCfg1> builder(&app, monitors, 1);
     builder.setStream(&stream).setWatchdogKick(nullptr);
@@ -277,13 +277,13 @@ TEST_F(MultiRatePipelineTest, TickLoop_FastTaskSamples)
 
 TEST_F(MultiRatePipelineTest, TickLoop_SlowDrainsFast)
 {
-    InstrumentedApp<MRCfg1>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<MRCfg1> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
-    PipelineFastTask       fast;
-    PipelineSlowTask       slow(fast);
+    PipelineFastTask fast;
+    PipelineSlowTask slow(fast);
 
     SystemBuilder<MRCfg1> builder(&app, monitors, 1);
     builder.setStream(&stream).setWatchdogKick(nullptr);
@@ -314,13 +314,13 @@ class MultiRateExtendedTest : public ::testing::Test
 
 TEST_F(MultiRateExtendedTest, MultipleDrains_AccumulatorReset)
 {
-    InstrumentedApp<MRCfg2>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<MRCfg2> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
-    PipelineFastTask       fast;
-    PipelineSlowTask       slow(fast);
+    PipelineFastTask fast;
+    PipelineSlowTask slow(fast);
 
     SystemBuilder<MRCfg2> builder(&app, monitors, 1);
     builder.setStream(&stream).setWatchdogKick(nullptr);
@@ -352,13 +352,13 @@ class MultiRateTimerTest : public ::testing::Test
 
 TEST_F(MultiRateTimerTest, TaskTimers_InstrumentAllTasks)
 {
-    InstrumentedApp<MRCfg3>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<MRCfg3> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
-    PipelineFastTask       fast;
-    PipelineSlowTask       slow(fast);
+    PipelineFastTask fast;
+    PipelineSlowTask slow(fast);
 
     SystemBuilder<MRCfg3> builder(&app, monitors, 1);
     builder.setStream(&stream).setWatchdogKick(nullptr);

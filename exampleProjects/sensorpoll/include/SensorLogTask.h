@@ -63,17 +63,15 @@ class SensorLogTask : public SputterOS::IBackgroundTask
                 .append(m_poller.lastReading())
                 .append(" mV");
 
-            m_telemetry.log(SputterOS::TelemetryLogger::TaskID::SYSTEM,
-                            m_builder.c_str(),
-                            SputterOS::TelemetryLogger::Verbosity::STATUS,
-                            systemTimeMicros);
+            m_telemetry.log(SputterOS::TelemetryLogger::TaskID::SYSTEM, m_builder.c_str(),
+                            SputterOS::TelemetryLogger::Verbosity::STATUS, systemTimeMicros);
         }
     }
 
   private:
     static constexpr uint32_t kLogThreshold = 5; /**< @brief Readings between logs. */
 
-    SputterOS::TelemetryLogger         &m_telemetry;   /**< @brief Telemetry logger. */
+    SputterOS::TelemetryLogger         &m_telemetry;    /**< @brief Telemetry logger. */
     AdcPollTask                        &m_poller;       /**< @brief Data source. */
     SputterOS::LightweightStringBuilder m_builder;      /**< @brief Message formatter. */
     uint32_t                            m_lastReported; /**< @brief Count at last log. */

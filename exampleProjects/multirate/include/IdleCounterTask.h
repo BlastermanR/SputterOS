@@ -79,7 +79,7 @@ class IdleCounterTask : public SputterOS::IBackgroundTask
   private:
     static constexpr uint32_t kLogInterval = 500;
 
-    SputterOS::TelemetryLogger         &m_telemetry;    /**< @brief Shared telemetry buffer. */
+    SputterOS::TelemetryLogger         &m_telemetry;     /**< @brief Shared telemetry buffer. */
     SputterOS::LightweightStringBuilder m_builder;       /**< @brief Reusable message formatter. */
     uint32_t                            m_dispatchCount; /**< @brief Total dispatches. */
     uint32_t                            m_lastLogCount;  /**< @brief Dispatch count at last log. */

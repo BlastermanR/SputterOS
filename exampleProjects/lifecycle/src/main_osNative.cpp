@@ -78,7 +78,7 @@ int main()
 
     // -- User tasks ---------------------------------------------------------
     Lifecycle::WorkerTask  workerTask(workerTelemetry);   // Core 0, 5 Hz
-    Lifecycle::MonitorTask monitorTask(monitorTelemetry);  // Core 1, 2 Hz
+    Lifecycle::MonitorTask monitorTask(monitorTelemetry); // Core 1, 2 Hz
 
     // -- Build the kernel ---------------------------------------------------
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
@@ -98,8 +98,7 @@ int main()
     }
 
     std::printf("--- Lifecycle Example: Dual-Core AMP Scheduling ---\n");
-    std::printf("Kernel state after build(): %u\n",
-                static_cast<unsigned>(System<Cfg>::kernelState()));
+    std::printf("Kernel state after build(): %u\n", static_cast<unsigned>(System<Cfg>::kernelState()));
 
     // -- Retrieve sync handle before launching Core 1 -----------------------
     auto &sync = System<Cfg>::multiCoreSync();
@@ -132,8 +131,7 @@ int main()
     sync.setInit(0);
     System<Cfg>::init(0);
 
-    std::printf("Kernel state after init():  %u\n",
-                static_cast<unsigned>(System<Cfg>::kernelState()));
+    std::printf("Kernel state after init():  %u\n", static_cast<unsigned>(System<Cfg>::kernelState()));
 
     if (!sync.startupBarrier(0, ms{2000}))
     {
@@ -146,8 +144,8 @@ int main()
 
     // Run for ~3 seconds.
     static constexpr uint32_t kRunMs = 3000;
-    using WallClock = std::chrono::steady_clock;
-    const auto endAt = WallClock::now() + ms{kRunMs};
+    using WallClock                  = std::chrono::steady_clock;
+    const auto endAt                 = WallClock::now() + ms{kRunMs};
 
     while (WallClock::now() < endAt)
     {
@@ -167,8 +165,7 @@ int main()
     // -- Final summary ------------------------------------------------------
     std::printf("\n--- Lifecycle Summary ---\n");
     std::printf("Worker iterations (Core 0): %u\n", workerTask.iterCount());
-    std::printf("Final kernel state:         %u\n",
-                static_cast<unsigned>(System<Cfg>::kernelState()));
+    std::printf("Final kernel state:         %u\n", static_cast<unsigned>(System<Cfg>::kernelState()));
 
     return 0;
 }

@@ -47,8 +47,8 @@ class ControllableADC
 
     float readResult()
     {
-        m_inFlight = false;
-        m_ready    = false;
+        m_inFlight      = false;
+        m_ready         = false;
         const float val = static_cast<float>(m_nextValue);
         m_nextValue     = (m_nextValue + 37) % 1000;
         return val;
@@ -70,8 +70,8 @@ class ControllableADC
 class TestAdcPollTask : public IScheduledTask
 {
   public:
-    static constexpr SputterMicros kPeriodUs      = 50'000;
-    static constexpr uint32_t      kMaxIoRetries  = 10;
+    static constexpr SputterMicros kPeriodUs     = 50'000;
+    static constexpr uint32_t      kMaxIoRetries = 10;
 
     SputterMicros periodUs() const override { return kPeriodUs; }
     bool          isIoPending() const override { return m_waitingForAdc; }
@@ -211,7 +211,7 @@ TEST(IoPendingPatternTest, MultipleReadings_SawtoothPattern)
         task.tick(now); // start or read+start
         adc.setReady();
         now += 1'000;
-        task.tick(now); // poll ready → read → start next
+        task.tick(now);   // poll ready → read → start next
         now += 1'000'000; // advance past rate limit for next
     }
 

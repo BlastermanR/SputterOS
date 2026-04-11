@@ -76,11 +76,9 @@ class SimulatedADC
      * @param conversionDelayUs How long a conversion takes (µs).
      * @param getTime           Platform time function for simulating delay.
      */
-    explicit SimulatedADC(SputterOS::SputterMicros conversionDelayUs,
-                          SputterOS::MicrosecondSource getTime)
-        : m_conversionDelayUs(conversionDelayUs), m_getTime(getTime),
-          m_conversionStartTime(0), m_conversionInFlight(false),
-          m_nextValue(0)
+    explicit SimulatedADC(SputterOS::SputterMicros conversionDelayUs, SputterOS::MicrosecondSource getTime)
+        : m_conversionDelayUs(conversionDelayUs), m_getTime(getTime), m_conversionStartTime(0),
+          m_conversionInFlight(false), m_nextValue(0)
     {
     }
 
@@ -102,7 +100,8 @@ class SimulatedADC
      */
     bool isConversionReady() const
     {
-        if (!m_conversionInFlight) return false;
+        if (!m_conversionInFlight)
+            return false;
         return (m_getTime() - m_conversionStartTime) >= m_conversionDelayUs;
     }
 
@@ -126,11 +125,11 @@ class SimulatedADC
     bool isActive() const { return m_conversionInFlight; }
 
   private:
-    SputterOS::SputterMicros  m_conversionDelayUs;   /**< @brief Simulated conversion time. */
-    SputterOS::MicrosecondSource m_getTime;           /**< @brief Platform time source. */
-    SputterOS::SputterMicros  m_conversionStartTime;  /**< @brief When conversion started. */
-    bool                      m_conversionInFlight;    /**< @brief Conversion in progress? */
-    uint32_t                  m_nextValue;             /**< @brief Next reading to return. */
+    SputterOS::SputterMicros     m_conversionDelayUs;   /**< @brief Simulated conversion time. */
+    SputterOS::MicrosecondSource m_getTime;             /**< @brief Platform time source. */
+    SputterOS::SputterMicros     m_conversionStartTime; /**< @brief When conversion started. */
+    bool                         m_conversionInFlight;  /**< @brief Conversion in progress? */
+    uint32_t                     m_nextValue;           /**< @brief Next reading to return. */
 };
 
 } // namespace SensorPoll

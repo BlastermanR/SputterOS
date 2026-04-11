@@ -66,8 +66,8 @@ class TestFastSampleTask : public IScheduledTask
     }
 
   private:
-    uint32_t     m_sampleCount{0};
-    uint64_t     m_accumulator{0};
+    uint32_t      m_sampleCount{0};
+    uint64_t      m_accumulator{0};
     SputterMicros m_lastTick{0};
 };
 

@@ -89,8 +89,8 @@ class PipelineADC
 
     float readResult()
     {
-        m_inFlight = false;
-        m_ready    = false;
+        m_inFlight      = false;
+        m_ready         = false;
         const float val = static_cast<float>(m_nextValue);
         m_nextValue     = (m_nextValue + 37) % 1000;
         return val;
@@ -217,10 +217,10 @@ class IoPendingPipelineTest : public ::testing::Test
 
 TEST_F(IoPendingPipelineTest, BuildWithIoPendingTask_Succeeds)
 {
-    InstrumentedApp<IOCfg1>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<IOCfg1> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
     PipelineADC     adc;
     PipelineAdcTask adcTask(adc);
@@ -235,10 +235,10 @@ TEST_F(IoPendingPipelineTest, BuildWithIoPendingTask_Succeeds)
 
 TEST_F(IoPendingPipelineTest, InitPropagates_ToAdcTask)
 {
-    InstrumentedApp<IOCfg1>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<IOCfg1> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
     PipelineADC     adc;
     PipelineAdcTask adcTask(adc);
@@ -254,10 +254,10 @@ TEST_F(IoPendingPipelineTest, InitPropagates_ToAdcTask)
 
 TEST_F(IoPendingPipelineTest, KernelTick_StartsThenReadsConversion)
 {
-    InstrumentedApp<IOCfg1>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<IOCfg1> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
     PipelineADC     adc;
     PipelineAdcTask adcTask(adc);
@@ -285,10 +285,10 @@ TEST_F(IoPendingPipelineTest, KernelTick_StartsThenReadsConversion)
 
 TEST_F(IoPendingPipelineTest, KernelTick_MultipleConversions)
 {
-    InstrumentedApp<IOCfg1>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<IOCfg1> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
     PipelineADC     adc;
     PipelineAdcTask adcTask(adc);
@@ -330,10 +330,10 @@ class IoPendingTimeoutTest : public ::testing::Test
 
 TEST_F(IoPendingTimeoutTest, Timeout_DetectedThroughKernel)
 {
-    InstrumentedApp<IOCfg2>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<IOCfg2> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
     PipelineADC     adc;
     PipelineAdcTask adcTask(adc);
@@ -363,10 +363,10 @@ TEST_F(IoPendingTimeoutTest, Timeout_DetectedThroughKernel)
 
 TEST_F(IoPendingTimeoutTest, Recovery_AfterTimeout)
 {
-    InstrumentedApp<IOCfg2>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<IOCfg2> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
     PipelineADC     adc;
     PipelineAdcTask adcTask(adc);
@@ -410,13 +410,13 @@ class IoPendingWithBackgroundTest : public ::testing::Test
 
 TEST_F(IoPendingWithBackgroundTest, BackgroundTask_CoexistsWithIoPending)
 {
-    InstrumentedApp<IOCfg3>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<IOCfg3> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
-    PipelineADC     adc;
-    PipelineAdcTask adcTask(adc);
+    PipelineADC      adc;
+    PipelineAdcTask  adcTask(adc);
     PipelineBgLogger bgTask;
 
     SystemBuilder<IOCfg3> builder(&app, monitors, 1);
@@ -448,10 +448,10 @@ TEST_F(IoPendingWithBackgroundTest, BackgroundTask_CoexistsWithIoPending)
 
 TEST_F(IoPendingWithBackgroundTest, TaskTimer_CoversIoPendingTicks)
 {
-    InstrumentedApp<IOCfg3>   app;
-    FakeStreamReader          stream;
-    AlwaysSafeSafetyMonitor   monitor;
-    ISafetyMonitor           *monitors[] = {&monitor};
+    InstrumentedApp<IOCfg3> app;
+    FakeStreamReader        stream;
+    AlwaysSafeSafetyMonitor monitor;
+    ISafetyMonitor         *monitors[] = {&monitor};
 
     PipelineADC     adc;
     PipelineAdcTask adcTask(adc);

@@ -62,7 +62,8 @@ class FastSampleTask : public SputterOS::IScheduledTask
      */
     void tick(SputterOS::SputterMicros systemTimeMicros) override
     {
-        if ((systemTimeMicros - m_lastTick) < kPeriodUs) return;
+        if ((systemTimeMicros - m_lastTick) < kPeriodUs)
+            return;
         m_lastTick = systemTimeMicros;
 
         // Simulate a sensor reading that oscillates 0..99
@@ -89,9 +90,9 @@ class FastSampleTask : public SputterOS::IScheduledTask
     }
 
   private:
-    uint32_t m_sampleCount{0}; /**< @brief Total samples taken. */
-    uint64_t m_accumulator{0}; /**< @brief Running sum of readings. */
-    SputterOS::SputterMicros m_lastTick{0}; /**< @brief Last tick timestamp (µs). */
+    uint32_t                 m_sampleCount{0}; /**< @brief Total samples taken. */
+    uint64_t                 m_accumulator{0}; /**< @brief Running sum of readings. */
+    SputterOS::SputterMicros m_lastTick{0};    /**< @brief Last tick timestamp (µs). */
 };
 
 } // namespace Multirate

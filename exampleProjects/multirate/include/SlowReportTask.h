@@ -66,7 +66,8 @@ class SlowReportTask : public SputterOS::IScheduledTask
      */
     void tick(SputterOS::SputterMicros systemTimeMicros) override
     {
-        if ((systemTimeMicros - m_lastTick) < kPeriodUs) return;
+        if ((systemTimeMicros - m_lastTick) < kPeriodUs)
+            return;
         m_lastTick = systemTimeMicros;
         ++m_reportCount;
 
@@ -86,7 +87,7 @@ class SlowReportTask : public SputterOS::IScheduledTask
     }
 
   private:
-    SputterOS::TelemetryLogger         &m_telemetry;  /**< @brief Shared telemetry buffer. */
+    SputterOS::TelemetryLogger         &m_telemetry;   /**< @brief Shared telemetry buffer. */
     FastSampleTask                     &m_sampler;     /**< @brief Data source (fast task). */
     SputterOS::LightweightStringBuilder m_builder;     /**< @brief Reusable message formatter. */
     uint32_t                            m_reportCount; /**< @brief Running report count. */

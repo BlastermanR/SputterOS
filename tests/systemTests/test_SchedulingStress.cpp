@@ -700,8 +700,7 @@ TEST_F(SchedulingStress_DualCoreHighFreq, CommandsDeliveredDuringConcurrentHighF
     static constexpr std::size_t kCmds = 8;
     for (std::size_t i = 0; i < kCmds; ++i)
     {
-        DualStressCfg::Command cmd{DualStressCfg::CmdID::SET_FLOW, static_cast<uint8_t>(i),
-                                   static_cast<float>(i * 10)};
+        DualStressCfg::Command cmd{DualStressCfg::CmdID::SET_FLOW, static_cast<uint8_t>(i), static_cast<float>(i * 10)};
         System<DualStressCfg>::commandQueue().try_push(cmd);
     }
 
@@ -1216,7 +1215,7 @@ TEST_F(SchedulingStress_TimerRollover, RolloverDetectedDuringHighFreqTicks)
     System<RolloverCfg>::tick(0, SputterMicros(50));
 
     // ErrorLogger should have captured a TIMER_ROLLOVER entry.
-    bool           foundRollover = false;
+    bool               foundRollover = false;
     ErrorLogger::Entry entry{};
     while (System<RolloverCfg>::errorLogger().read(entry))
     {
