@@ -104,10 +104,12 @@ See [ExampleProjectStructure.md](ExampleProjectStructure.md) for a complete refe
 
 ## Step 2 — Define Your Config Struct
 
-SputterOS uses **compile-time template parameters**. Define a plain struct satisfying the `ConfigTraits` contract documented in `include/sputteros/ConfigTraits.h`:
+SputterOS uses **compile-time template parameters**. Copy `templates/MyProjectConfig.h` from the SputterOS repository into your project's `config/` directory and customise it. Every option is documented inline.
+
+Minimum required fields:
 
 ```cpp
-// include/config/MyConfig.h
+// config/MyConfig.h
 #pragma once
 #include <cstdint>
 #include <cstddef>
@@ -138,13 +140,13 @@ struct MyConfig {
         float   value;
     };
 
-    // Required: core count and queue capacity
-    static constexpr std::size_t kCoreCount         = 2;     // 1 or 2
-    static constexpr std::size_t kQueueCapacity     = 16;    // > 0
+    // Required
+    static constexpr std::size_t kCoreCount     = 2;    // 1 or 2
+    static constexpr std::size_t kQueueCapacity = 16;   // > 0
 
     // Optional (defaults shown)
-    static constexpr int         kMaxCommandsPerTick = 8;
-    static constexpr uint8_t     kMaxValidCommandID  = 3;    // highest valid CmdID
+    // static constexpr int      kMaxCommandsPerTick = 8;
+    // static constexpr uint8_t  kMaxValidCommandID  = 3;  // highest valid CmdID
     // static constexpr uint32_t kControlBudgetUs    = 10000; // control cycle budget (µs)
 };
 ```
@@ -161,25 +163,19 @@ Each HAL interface represents one category of hardware. All implementations must
 
 ### Interface Summary
 
-| Interface | Header | Dummy Stub |
-|---|---|---|
-| `IStreamReader` | `hal/devices/IStreamReader.h` | `DummyStreamReader` — no data |
+| Interface | Header |
+|---|---|
+| `IStream` | `hal/devices/IStream.h` |
 
-`IStreamReader` is a HAL interface and does not inherit `ISputterDevice`. Domain-specific device interfaces (vacuum gauges, MFCs, power supplies, arc detectors, turbo pumps) are **not** provided by SputterOS. Define them in your own project inheriting `ISputterDevice`.
+`IStream` is the bidirectional byte-stream HAL interface (non-blocking read/write). Domain-specific device interfaces (vacuum gauges, MFCs, power supplies, arc detectors, turbo pumps) are **not** provided by SputterOS. Define them in your own project inheriting `ISputterDevice`.
 
 ### Bring-Up Strategy
 
-Start with dummy stubs to verify the system boots and ticks:
-
-```cpp
-SputterOS::DummyStreamReader   usbStream;
-```
-
-Replace each stub incrementally as real drivers are written and validated.
+Start with a stub implementation that returns zero bytes to verify the system boots and ticks, then replace it with your real driver.
 
 ### Implementation Notes
 
-**`IStreamReader`** — All methods must be non-blocking. `available()` returns 0 if no data; `read()` returns 0 without blocking; `write()` returns bytes accepted without waiting for TX space.
+**`IStream`** — All methods must be non-blocking. `available()` returns 0 if no data; `read()` returns 0 without blocking; `write()` returns bytes accepted without waiting for TX space.
 
 **Domain device interfaces** — When writing your own (e.g. `IMyVacuumGauge`), inherit `ISputterDevice` and override `executeFastFault()` for any ISR-safe fast-fault path. Concrete implementations may use ISRs internally (see [ISR Methodology](ISRMethodology.md)).
 
@@ -408,7 +404,7 @@ GasControlTask gasTask;
 gasTask.setFlowDevice(&myFlowController);     // registers device dependency
 gasTask.setPressureDevice(&myPressureSensor);  // registers device dependency
 
-builder.core(0).addTask(&gasTask);
+builder.core(0).addScheduledTask(&gasTask);
 
 // build() will now call gasTask.validateDependencies()
 // If setFlowDevice() or setPressureDevice() was not called, build() fails.
@@ -457,7 +453,7 @@ int main() {
     builder.setWatchdogKick([]() { /* kick hardware watchdog */ });
 
     // Optional: add custom user tasks
-    // builder.core(0).addTask(&myCustomTask);
+    // builder.core(0).addScheduledTask(&myCustomTask);
 
     // build() creates ControlTask, CommsTask, DiagnosticsTask internally.
     // BuildResult is [[nodiscard]] — discarding it is a compiler warning.
@@ -526,7 +522,7 @@ A hardware ISR fires and calls `ISputterDevice::executeFastFault()` to cut power
 
 ## Serial Command Protocol
 
-`CommsTask<Cfg>` reads ASCII bytes from `IStreamReader` via `CLI<Cfg>` and parses into `Cfg::Command` packets.
+`CommsTask<Cfg>` reads ASCII bytes from `IStream` via `CLI<Cfg>` and parses into `Cfg::Command` packets.
 
 ### Wire Format
 
@@ -594,9 +590,9 @@ telemetry.drain(usbWrite, usbStream);
 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
-| `build()` returns error | A required dependency is missing or core affinity violated | Check `result.error` message; verify `IUserApplication`, `IStreamReader`, safety monitors are non-null |
-| Application never ticks | `ISafetyMonitor::checkFailsafe()` permanently returning `false` | Verify all registered monitors return `true` under nominal conditions |
-| Commands not received | `IStreamReader::available()` always 0 | Ensure the serial driver is initialised before `build()` |
+| `build()` returns error | A required dependency is missing or core affinity violated | Check `result.error` message; verify `IUserApplication`, `IStream`, safety monitors are non-null |
+| Application never ticks | `ISafetyMonitor::isSafe()` permanently returning `false` | Verify all registered monitors return `true` under nominal conditions |
+| Commands not received | `IStream::available()` always 0 | Ensure the serial driver is initialised before `build()` |
 | Template compile errors (long error messages) | `Cfg` struct missing required members | Verify `Cfg::State`, `Cfg::CmdID`, `Cfg::Command` all exist. See `ConfigTraits.h`. |
 | `std::chrono` conversion errors | Raw integer passed where chrono expected | Wrap integers: `std::chrono::milliseconds{value}`. All `tick()`, `log()`, `compute()`, etc. now use chrono. |
 | Application stuck, `tick()` never reached | `evaluateSafety()` returning `false` each cycle | Check which `ISafetyMonitor::name()` is failing |

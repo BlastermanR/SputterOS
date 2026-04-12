@@ -33,9 +33,9 @@ Develop your entire control system on a standard PC without hardware dependencie
 │   SputterOS Core                                     │
 │   ┌──────────────────────────────────────────────┐   │
 │   │ System<Cfg>  (runtime singleton)             │   │
-│   │  ├─ ControlTask<Cfg>    (ICriticalTask)      │   │
-│   │  ├─ CommsTask<Cfg>      (IAsyncTask)         │   │
-│   │  ├─ DiagnosticsTask     (IAsyncTask)         │   │
+│   │  ├─ ScheduledControlTask<Cfg>                │   │
+│   │  ├─ ScheduledCommsTask<Cfg>                  │   │
+│   │  ├─ BackgroundDiagnosticsTask                │   │
 │   │  ├─ LockFreeQueue       (SPSC ring buffer)   │   │
 │   │  ├─ WatchdogSync        (heartbeat monitor)  │   │
 │   │  └─ MultiCoreSync       (lifecycle barriers) │   │
@@ -47,7 +47,7 @@ Develop your entire control system on a standard PC without hardware dependencie
                           ▼
 ┌──────────────────────────────────────────────────────┐
 │   HAL + OSAL Interfaces (you implement)              │
-│   IStreamReader · ISputterDevice · ITask · ...       │
+│   IStream · ISputterDevice · ITask · ...             │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -109,11 +109,11 @@ The user provides:
 
 | You Provide | SputterOS Provides |
 |---|---|
-| `Cfg` struct (states, commands, capacities) | Compile-time `ConfigValidator` |
-| `IUserApplication<Cfg>` (process logic) | `ControlTask` calling your app each tick |
-| `ISafetyMonitor[]` adapters | Safety evaluation before every tick |
-| HAL drivers (`IStreamReader`, your domain devices) | 1 dummy stub for bring-up |
-| Platform `main.cpp` wiring | `SystemBuilder` declarative topology API |
+| `Cfg` struct (states, commands, capacities) | Compile-time `ConfigValidator` + kernel `System<Cfg>` singleton |
+| `IUserApplication<Cfg>` (process logic) | `ScheduledControlTask<Cfg>` ticks your app every cycle |
+| `ISafetyMonitor[]` adapters | Safety evaluation before every tick, abort on failure |
+| HAL drivers (`IStream`, your domain devices) | `ScheduledCommsTask<Cfg>` for serial I/O + `BackgroundDiagnosticsTask` for health monitoring |
+| Platform `main.cpp` wiring | `SystemBuilder` declarative topology API + multi-core sync (`LockFreeQueue`, watchdog, barriers) |
 
 ## Quick Start
 
@@ -190,7 +190,7 @@ See the [Implementation Guide](docs/ImplementationGuide.md) for the full walkthr
 - **Utilities**
   - PID controller (discrete, anti-windup, chrono timestamps)
   - `MemoryProfiler` — heap/stack high-water mark tracking
-  - 1 dummy HAL stub (`DummyStreamReader`) — start development with no hardware
+  - Complete `templates/` directory — annotated `MyProjectConfig.h` and `main.cpp` for zero-hardware bring-up
 
 - **Testing**
   - Host-native GoogleTest/CTest coverage for library logic, kernel tasks, OSAL utilities, and end-to-end pipelines
