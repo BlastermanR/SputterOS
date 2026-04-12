@@ -27,12 +27,17 @@ target_include_directories(sensorpoll_osNative PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal_impl    # SensorPollHAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/osal_impl   # SensorPollOSAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include     # SensorPollStateMachine.h, tasks
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common/hal  # TcpStreamServer.h
 )
 
 target_link_libraries(sensorpoll_osNative PRIVATE
     SputterOS        # SputterOS header-only + compiled utils
     Threads::Threads # std::this_thread::sleep_for
 )
+
+if(WIN32)
+    target_link_libraries(sensorpoll_osNative PRIVATE ws2_32)
+endif()
 
 if(MSVC)
     target_compile_options(sensorpoll_osNative PRIVATE /W4)

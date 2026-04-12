@@ -14,6 +14,7 @@
  */
 
 #include "sputteros/comms/protocol/FrameConstants.h"
+#include "sputteros/utils/PerformanceSnapshot.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -169,6 +170,138 @@ inline std::size_t serializeLog(uint8_t level, const char *text, uint8_t *outBuf
     outBuf[0] = level;
     std::memcpy(&outBuf[1], text, textLen);
     return total;
+}
+
+// =========================================================================
+// METRICS_RESP — compact PerformanceSnapshot serialization
+// =========================================================================
+
+/** @brief Fixed wire size of the metrics header (system-level fields). */
+static constexpr std::size_t kMetricsHeaderSize = 66;
+
+/** @brief Fixed wire size of one task entry (no histogram). */
+static constexpr std::size_t kMetricsTaskSize = 26;
+
+namespace detail
+{
+
+/** @brief Little-endian write helpers. */
+inline void writeU8(uint8_t *&p, uint8_t v) { *p++ = v; }
+
+inline void writeU16(uint8_t *&p, uint16_t v)
+{
+    std::memcpy(p, &v, 2);
+    p += 2;
+}
+
+inline void writeU32(uint8_t *&p, uint32_t v)
+{
+    std::memcpy(p, &v, 4);
+    p += 4;
+}
+
+inline void writeU64(uint8_t *&p, uint64_t v)
+{
+    std::memcpy(p, &v, 8);
+    p += 8;
+}
+
+inline void writeF32(uint8_t *&p, float v)
+{
+    std::memcpy(p, &v, 4);
+    p += 4;
+}
+
+} // namespace detail
+
+/**
+ * @brief Serialize a PerformanceSnapshot into a compact METRICS_RESP payload.
+ *
+ * Wire layout (little-endian):
+ * @code
+ *   Header (66 bytes):
+ *     timestamp           : uint64  (8)
+ *     coreCount           : uint8   (1)
+ *     coreUtilization[4]  : float32 (16)
+ *     queueDepth          : uint16  (2)
+ *     queueMaxDepth       : uint16  (2)
+ *     queueAvgDepth       : float32 (4)
+ *     peakHeapUsed        : uint32  (4)
+ *     freeHeap            : uint32  (4)
+ *     stackHighWater      : uint32  (4)
+ *     totalGapUs          : uint32  (4)
+ *     maxGapUs            : uint32  (4)
+ *     avgGapUs            : float32 (4)
+ *     schedulerTickCount  : uint32  (4)
+ *     totalOverruns       : uint16  (2)
+ *     totalDeadlineMisses : uint16  (2)
+ *     taskCount           : uint8   (1)
+ *
+ *   Per task (26 bytes each):
+ *     taskIndex : uint8   (1)
+ *     coreId    : uint8   (1)
+ *     lastUs    : uint32  (4)
+ *     minUs     : uint32  (4)
+ *     maxUs     : uint32  (4)
+ *     avgUs     : float32 (4)
+ *     samples   : uint32  (4)
+ *     overruns  : uint16  (2)
+ *     misses    : uint16  (2)
+ * @endcode
+ *
+ * @param snap   Snapshot to serialize.
+ * @param outBuf Destination buffer.
+ * @param outCap Capacity of destination buffer.
+ * @return Number of bytes written, or 0 if the buffer is too small.
+ */
+inline std::size_t serializeMetrics(const PerformanceSnapshot &snap, uint8_t *outBuf, std::size_t outCap)
+{
+    const std::size_t needed = kMetricsHeaderSize + snap.taskCount * kMetricsTaskSize;
+    if (outCap < needed)
+    {
+        return 0;
+    }
+
+    uint8_t *p = outBuf;
+    using namespace detail;
+
+    // ── System header ────────────────────────────────────────────────
+    writeU64(p, snap.timestamp);
+    writeU8(p, static_cast<uint8_t>(snap.coreCount));
+    for (std::size_t i = 0; i < 4; ++i)
+    {
+        writeF32(p, snap.coreUtilization[i]);
+    }
+    writeU16(p, static_cast<uint16_t>(snap.queueDepth));
+    writeU16(p, static_cast<uint16_t>(snap.queueMaxDepth));
+    writeF32(p, snap.queueAvgDepth);
+    writeU32(p, static_cast<uint32_t>(snap.peakHeapUsed));
+    writeU32(p, static_cast<uint32_t>(snap.freeHeap));
+    writeU32(p, static_cast<uint32_t>(snap.stackHighWater));
+    writeU32(p, static_cast<uint32_t>(snap.totalGapUs));
+    writeU32(p, static_cast<uint32_t>(snap.maxGapUs));
+    writeF32(p, snap.avgGapUs);
+    writeU32(p, snap.schedulerTickCount);
+    writeU16(p, static_cast<uint16_t>(snap.totalOverruns));
+    writeU16(p, static_cast<uint16_t>(snap.totalDeadlineMisses));
+    writeU8(p, static_cast<uint8_t>(snap.taskCount));
+
+    // ── Per-task entries ─────────────────────────────────────────────
+    for (std::size_t t = 0; t < snap.taskCount; ++t)
+    {
+        const auto &ts = snap.tasks[t];
+        writeU8(p, static_cast<uint8_t>(ts.taskIndex));
+        writeU8(p, static_cast<uint8_t>(ts.coreId));
+        writeU32(p, static_cast<uint32_t>(ts.lastUs));
+        writeU32(p, static_cast<uint32_t>(ts.minUs));
+        writeU32(p, static_cast<uint32_t>(ts.maxUs));
+        writeF32(p, ts.avgUs);
+        writeU32(p, ts.samples);
+        writeU16(p, static_cast<uint16_t>(ts.overruns));
+        writeU16(p, static_cast<uint16_t>(ts.misses));
+    }
+
+    return static_cast<std::size_t>(p - outBuf);
 }
 
 } // namespace ResponseSerializer

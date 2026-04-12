@@ -79,13 +79,24 @@ class SystemTimer
      * @brief Construct a SystemTimer with an optional clock source.
      * @param src: Platform microsecond clock (nullable for deferred init).
      */
-    explicit SystemTimer(MicrosecondSource src = nullptr) : m_source(src) {}
+    explicit SystemTimer(MicrosecondSource src = nullptr)
+        : m_source(src), m_epoch(src ? src() : 0)
+    {
+    }
 
     /**
      * @brief Set or replace the platform clock source.
+     *
+     * Captures the current clock value as the epoch so that subsequent
+     * `nowMicros()` calls return zero-based uptime.
+     *
      * @param src: Microsecond clock function pointer.
      */
-    void setClockSource(MicrosecondSource src) { m_source = src; }
+    void setClockSource(MicrosecondSource src)
+    {
+        m_source = src;
+        m_epoch  = src ? src() : 0;
+    }
 
     /**
      * @brief Query whether a clock source has been injected.
@@ -99,9 +110,13 @@ class SystemTimer
 
     /**
      * @brief Read the current time in microseconds from the injected source.
-     * @return Monotonic µs count, or 0 if no clock source is set.
+     *
+     * Returns zero-based uptime: the raw clock value minus the epoch
+     * captured when `setClockSource()` was called.
+     *
+     * @return Monotonic µs since clock source was set, or 0 if no source.
      */
-    SputterMicros nowMicros() const { return m_source ? m_source() : 0; }
+    SputterMicros nowMicros() const { return m_source ? (m_source() - m_epoch) : 0; }
 
     // -----------------------------------------------------------------
     // Units Library Convenience API (non-hot-path)
@@ -155,6 +170,7 @@ class SystemTimer
 
   private:
     MicrosecondSource m_source; /**< @brief Injected platform clock. */
+    SputterMicros     m_epoch{0}; /**< @brief Raw clock value at setClockSource() time. */
 };
 
 } // namespace SputterOS

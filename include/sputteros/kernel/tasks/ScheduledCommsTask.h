@@ -5,6 +5,7 @@
 #include "sputteros/comms/CLI.h"
 #include "sputteros/comms/protocol/IProtocolHandler.h"
 #include "sputteros/comms/protocol/MessageType.h"
+#include "sputteros/comms/protocol/ResponseSerializer.h"
 #include "sputteros/hal/devices/IStream.h"
 #include "sputteros/kernel/KernelConstructTag.h"
 #include "sputteros/osal/sync/ICommandProducer.h"
@@ -53,6 +54,14 @@ struct KernelTestAccess;
 template <typename Cfg> class ScheduledCommsTask : public IScheduledTask, public IProtocolHandler<Cfg>
 {
   public:
+    /**
+     * @brief Callback type for capturing a PerformanceSnapshot.
+     *
+     * Wired by SystemBuilder to `System<Cfg>::snapshot()`. Avoids
+     * a circular include between ScheduledCommsTask and System.
+     */
+    using MetricsSnapshotFn = PerformanceSnapshot (*)();
+
     using CommandStruct = typename Cfg::Command;
 
     /**
@@ -135,6 +144,14 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask, public
     }
 
     /**
+     * @brief Set the metrics snapshot callback.
+     * @param fn  Function pointer to a PerformanceSnapshot capture routine.
+     *
+     * Called by SystemBuilder after construction to wire System<Cfg>::snapshot.
+     */
+    void setMetricsSnapshotFn(MetricsSnapshotFn fn) { m_snapshotFn = fn; }
+
+    /**
      * @brief Access the underlying CLI for external telemetry output.
      * @return Reference to the internal CLI instance.
      */
@@ -194,9 +211,16 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask, public
      */
     void onMetricsRequest(uint8_t seqNum) override
     {
-        // Placeholder: send empty metrics response.
-        // Full implementation requires System<Cfg> access (wired by builder).
-        m_cli.sendFramedMetricsResp(seqNum, nullptr, 0);
+        if (!m_snapshotFn)
+        {
+            m_cli.sendFramedMetricsResp(seqNum, nullptr, 0);
+            return;
+        }
+        const PerformanceSnapshot snap = m_snapshotFn();
+        uint8_t buf[ResponseSerializer::kMetricsHeaderSize +
+                    kMaxSnapshotTasks * ResponseSerializer::kMetricsTaskSize];
+        const std::size_t len = ResponseSerializer::serializeMetrics(snap, buf, sizeof(buf));
+        m_cli.sendFramedMetricsResp(seqNum, buf, len);
     }
 
     /**
@@ -217,6 +241,13 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask, public
      * --------------------
      */
     ICommandProducer<Cfg> *m_commandQueue; /**< @brief Producer-side queue to ControlTask. */
+
+    /**
+     * --------------------
+     * Metrics callback
+     * --------------------
+     */
+    MetricsSnapshotFn m_snapshotFn = nullptr; /**< @brief Captures a PerformanceSnapshot (wired by builder). */
 
     /**
      * --------------------

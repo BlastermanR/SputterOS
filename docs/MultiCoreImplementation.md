@@ -629,13 +629,15 @@ All three tasks fit in a 10 ms tick window, as long as no single task blocks.
 
 | Task | Typical Load |
 |---|---|
-| ControlTask | ~20% (2 ms every 10 ms) |
-| CommsTask | 5-10% (0.5-1 ms variable, heavily I/O dependent) |
-| DiagnosticsTask | <1% (polling only) |
-| Idle / sleep | 70-75% |
+| ControlTask | ~0.02–0.2% (2 ms execution, 100 Hz tick, plus idle sleep) |
+| CommsTask | <0.5% (I/O-bound; most time spent sleeping) |
+| DiagnosticsTask | <0.01% (polling only) |
+| Idle / sleep | >99% |
+
+> **Note:** Utilization is measured **tick-to-tick** — wall time includes the sleep gap between ticks, giving true CPU load rather than dispatch-window utilization. A tight busy-loop application would approach 100%. With the default 1 ms tick sleep in example projects, load is sub-1%.
 
 On dual-core: Both cores mostly idle between ticks (good for power).
-On single-core: ~25-30% utilization; 70% idle time.
+On single-core: Idle time dominates unless tick rate equals task period with no sleep.
 
 ---
 

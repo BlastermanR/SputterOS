@@ -348,7 +348,7 @@ classDiagram
 | `MultiCoreSync<N>` | Per-core lifecycle state machine: `UNBORN → INIT → READY → SHUTDOWN` (or `ERROR`). Startup/shutdown barriers with `std::chrono::milliseconds` timeouts. |
 | `WatchdogSync<N>` | Atomic heartbeat per core. `kick(coreId, time)` updates timestamp; `isStale(coreId, time, timeout)` detects hangs. |
 | `NoOpMultiCoreSync` | Stub for single-core configs (`kCoreCount < 2`). All methods are no-ops. |
-| `SputterTime` | Type alias: `SputterMicros` (`uint64_t`), `MicrosecondSource` function pointer, `SystemTimer` class with `nowMicros()`, `milliseconds()`, `seconds()`. |
+| `SputterTime` | Type alias: `SputterMicros` (`uint64_t`), `MicrosecondSource` function pointer, `SystemTimer` class with `nowMicros()` (zero-based uptime from clock injection time), `milliseconds()`, `seconds()`. |
 
 ---
 
@@ -382,7 +382,7 @@ The utility layer is organized into two subfolders:
 | `LightweightStringBuilder` | 128-byte fixed-capacity heap-free formatter. Chainable `append()`. |
 | `NonBlockingStopwatch` | Monotonic timer: `hasExpired(time, duration) → bool`. |
 | `TaskTimer` | Per-task execution timer with injectable clock. Tracks last/min/max/average duration, sample count, overrun count, deadline-miss count, and an 8-bucket duration histogram (512 µs per bucket). Embedded in every `ITask`. |
-| `CoreUtilizationTracker` | Per-core windowed busy/total accumulator. Auto-resets every 1000 ticks; exposes `getUtilization()` for the last complete window. |
+| `CoreUtilizationTracker` | Per-core windowed busy/total accumulator. Wall time is measured tick-to-tick (full period including sleep/idle), giving true CPU load. Auto-resets every 1000 ticks; exposes `getUtilization()` for the last complete window. |
 | `SchedulerHealthMetrics` | Aggregate gap-time (idle time per tick), peak gap, total overruns, and total deadline misses across all tasks. Counters saturate at `UINT32_MAX` to prevent wrap-around. |
 | `QueueDepthMonitor` | Command queue depth tracker: last/max/average depth. Sample count saturates at `UINT32_MAX`. |
 | `PerformanceSnapshot` | POD value type (~1.2 KiB on stack). Captures a point-in-time copy of all metrics: per-core utilization, per-task histograms, queue depth, memory, and scheduler health. Returned by `System<Cfg>::snapshot()`. |

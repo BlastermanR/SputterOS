@@ -379,6 +379,7 @@ template <typename Cfg> class SystemBuilder
             S::s_controlTask.emplace(Kernel::KernelConstructTag{}, &S::s_commandQueue, m_app, m_monitors,
                                      m_monitorCount);
             S::s_commsTask.emplace(Kernel::KernelConstructTag{}, m_stream, &S::s_commandQueue);
+            S::s_commsTask->setMetricsSnapshotFn(&S::snapshot);
             S::s_diagsTask.emplace(Kernel::KernelConstructTag{}, S::s_errorLogger, S::s_memProfiler, m_watchdogKick,
                                    CfgControlBudgetUs<Cfg>::value);
 

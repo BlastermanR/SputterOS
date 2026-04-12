@@ -217,3 +217,101 @@ def decode_log(payload: bytes) -> Optional[tuple[int, str]]:
     level = payload[0]
     text = payload[1:].decode("utf-8", errors="replace")
     return (level, text)
+
+
+# =========================================================================
+# Metrics deserialization (Device → Host)
+# =========================================================================
+
+# Wire sizes must match C++ ResponseSerializer constants.
+_METRICS_HEADER_SIZE = 66
+_METRICS_TASK_SIZE = 26
+
+
+class TaskMetrics(NamedTuple):
+    """Per-task timing metrics."""
+
+    task_index: int
+    core_id: int
+    last_us: int
+    min_us: int
+    max_us: int
+    avg_us: float
+    samples: int
+    overruns: int
+    misses: int
+
+
+class PerformanceMetrics(NamedTuple):
+    """Decoded PerformanceSnapshot from a METRICS_RESP payload."""
+
+    timestamp: int
+    core_count: int
+    core_utilization: tuple[float, float, float, float]
+    queue_depth: int
+    queue_max_depth: int
+    queue_avg_depth: float
+    peak_heap_used: int
+    free_heap: int
+    stack_high_water: int
+    total_gap_us: int
+    max_gap_us: int
+    avg_gap_us: float
+    scheduler_tick_count: int
+    total_overruns: int
+    total_deadline_misses: int
+    tasks: list[TaskMetrics]
+
+
+def decode_metrics(payload: bytes) -> Optional[PerformanceMetrics]:
+    """Decode a METRICS_RESP payload into a PerformanceMetrics object.
+
+    Returns None if the payload is too short or structurally invalid.
+    """
+    if len(payload) < _METRICS_HEADER_SIZE:
+        return None
+
+    off = 0
+    (timestamp,) = struct.unpack_from("<Q", payload, off); off += 8
+    (core_count,) = struct.unpack_from("<B", payload, off); off += 1
+    core_util = struct.unpack_from("<4f", payload, off); off += 16
+    queue_depth, queue_max_depth = struct.unpack_from("<HH", payload, off); off += 4
+    (queue_avg_depth,) = struct.unpack_from("<f", payload, off); off += 4
+    peak_heap, free_heap, stack_hw = struct.unpack_from("<III", payload, off); off += 12
+    total_gap, max_gap = struct.unpack_from("<II", payload, off); off += 8
+    (avg_gap,) = struct.unpack_from("<f", payload, off); off += 4
+    (tick_count,) = struct.unpack_from("<I", payload, off); off += 4
+    total_overruns, total_misses = struct.unpack_from("<HH", payload, off); off += 4
+    (task_count,) = struct.unpack_from("<B", payload, off); off += 1
+
+    expected = _METRICS_HEADER_SIZE + task_count * _METRICS_TASK_SIZE
+    if len(payload) < expected:
+        return None
+
+    tasks: list[TaskMetrics] = []
+    for _ in range(task_count):
+        ti, ci = struct.unpack_from("<BB", payload, off); off += 2
+        last, mn, mx = struct.unpack_from("<III", payload, off); off += 12
+        (avg,) = struct.unpack_from("<f", payload, off); off += 4
+        (samples,) = struct.unpack_from("<I", payload, off); off += 4
+        ovr, mis = struct.unpack_from("<HH", payload, off); off += 4
+        tasks.append(TaskMetrics(ti, ci, last, mn, mx, avg, samples, ovr, mis))
+
+    return PerformanceMetrics(
+        timestamp=timestamp,
+        core_count=core_count,
+        core_utilization=core_util,
+        queue_depth=queue_depth,
+        queue_max_depth=queue_max_depth,
+        queue_avg_depth=queue_avg_depth,
+        peak_heap_used=peak_heap,
+        free_heap=free_heap,
+        stack_high_water=stack_hw,
+        total_gap_us=total_gap,
+        max_gap_us=max_gap,
+        avg_gap_us=avg_gap,
+        scheduler_tick_count=tick_count,
+        total_overruns=total_overruns,
+        total_deadline_misses=total_misses,
+        tasks=tasks,
+    )

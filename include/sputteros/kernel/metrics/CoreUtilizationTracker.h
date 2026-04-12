@@ -6,9 +6,12 @@
  * @brief Per-core busy vs. idle utilization tracker.
  *
  * Accumulates the ratio of busy time (task execution) to total wall
- * time within each `System::tick()` call. The tracker uses a windowed
- * accumulator that auto-resets after `kWindowTicks` ticks to prevent
- * overflow and provide a rolling utilization figure.
+ * time across consecutive `System::tick()` calls. Wall time is measured
+ * as the interval between consecutive `recordTickStart()` calls,
+ * capturing the full tick period including sleep/idle gaps between ticks.
+ * The tracker uses a windowed accumulator that auto-resets after
+ * `kWindowTicks` ticks to prevent overflow and provide a rolling
+ * utilization figure.
  *
  * Instrumented by `System::tick()`:
  * - `recordTickStart()` at the beginning of each tick.
@@ -36,25 +39,38 @@ class CoreUtilizationTracker
     static constexpr uint32_t kWindowTicks = 1000;
 
     /**
-     * @brief Record the start of a tick.
+     * @brief Record the start of a tick and accumulate wall time.
+     *
+     * Wall time is measured as the interval between consecutive
+     * `recordTickStart()` calls, capturing the full tick period
+     * including any sleep/idle gap between ticks. The first tick
+     * is skipped (no previous start to measure from).
+     *
      * @param now: Current monotonic system time in microseconds.
      */
-    void recordTickStart(SputterMicros now) { m_tickStart = now; }
+    void recordTickStart(SputterMicros now)
+    {
+        if (m_hasPrev)
+        {
+            SputterMicros wallTime = (now >= m_prevTickStart) ? (now - m_prevTickStart) : 0;
+            m_totalUs += wallTime;
+        }
+        m_prevTickStart = now;
+        m_hasPrev       = true;
+        m_tickStart     = now;
+    }
 
     /**
      * @brief Record the end of a tick with the measured busy duration.
      *
-     * Accumulates busy and total (wall-clock) time for the tick.
+     * Accumulates busy time and manages the measurement window.
      * Auto-resets the window after `kWindowTicks` ticks.
      *
-     * @param now:          Current monotonic system time in microseconds.
      * @param busyDuration: Sum of all task execution times during this tick (µs).
      */
-    void recordTickEnd(SputterMicros now, SputterMicros busyDuration)
+    void recordTickEnd(SputterMicros busyDuration)
     {
-        SputterMicros wallTime = (now >= m_tickStart) ? (now - m_tickStart) : 0;
         m_busyUs += busyDuration;
-        m_totalUs += wallTime;
         ++m_tickCount;
 
         if (m_tickCount >= kWindowTicks)
@@ -112,6 +128,8 @@ class CoreUtilizationTracker
     void reset()
     {
         m_tickStart       = 0;
+        m_prevTickStart   = 0;
+        m_hasPrev         = false;
         m_busyUs          = 0;
         m_totalUs         = 0;
         m_tickCount       = 0;
@@ -122,6 +140,8 @@ class CoreUtilizationTracker
 
   private:
     SputterMicros m_tickStart{0};       /**< @brief Start timestamp of current tick. */
+    SputterMicros m_prevTickStart{0};   /**< @brief Start timestamp of previous tick (for wall time). */
+    bool          m_hasPrev{false};     /**< @brief True after the first recordTickStart() call. */
     SputterMicros m_busyUs{0};          /**< @brief Accumulated busy time in current window (µs). */
     SputterMicros m_totalUs{0};         /**< @brief Accumulated wall time in current window (µs). */
     uint32_t      m_tickCount{0};       /**< @brief Ticks in current window. */

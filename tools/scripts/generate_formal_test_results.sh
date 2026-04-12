@@ -18,7 +18,7 @@ NINJA="${2:-ninja}"
 CTEST="${3:-ctest}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RESULTS_FILE="$PROJECT_ROOT/FormalTestResults.md"
 TEXT_RESULTS_FILE="$PROJECT_ROOT/FormalTestResults.txt"
 TEST_BUILD_DIR="$PROJECT_ROOT/tests/build"

@@ -28,12 +28,17 @@ target_include_directories(pingpong_osNative PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/osal_impl   # PingPongOSAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include     # PingPongStateMachine.h, SharedCounter.h,
                                             # PingTask.h, PongTask.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common/hal  # TcpStreamServer.h
 )
 
 target_link_libraries(pingpong_osNative PRIVATE
     SputterOS        # SputterOS header-only + compiled utils
     Threads::Threads # std::thread, std::this_thread::sleep_for
 )
+
+if(WIN32)
+    target_link_libraries(pingpong_osNative PRIVATE ws2_32)
+endif()
 
 # Strict warnings — match the quality bar used across other test targets.
 if(MSVC)
