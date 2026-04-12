@@ -1,37 +1,32 @@
 #ifndef SPUTTEROS_OSAL_IASYNCTASK_H
 #define SPUTTEROS_OSAL_IASYNCTASK_H
 
-#include "sputteros/osal/tasks/ITask.h"
-
 /**
  * @file IAsyncTask.h
- * @brief Interface for best-effort, Core 1 pinned kernel tasks.
+ * @brief TEMPORARY compatibility shim — will be removed after Plan E.
  *
- * Tasks that inherit `IAsyncTask` are scheduled on Core 1 in a multi-core
- * configuration. They do not have strict deterministic timing requirements
- * and may run on a best-effort basis. `SystemBuilder` enforces the core
- * pinning constraint at build-time.
+ * Bridges the old `IAsyncTask` API to the new `IBackgroundTask`
+ * hierarchy so that downstream code (`CommsTask`, `DiagnosticsTask`,
+ * tests) continues to compile while the task hierarchy refactor is
+ * in progress.
  *
- * `CommsTask` and `DiagnosticsTask` are the canonical `IAsyncTask`
- * implementations — serial I/O and health monitoring do not require the
- * hard real-time guarantees of the control loop.
- *
- * @note In single-core configurations all tasks run on Core 0 regardless
- *       of their affinity marker.
+ * @warning Do NOT add new code that depends on `IAsyncTask`. Use
+ *          `IBackgroundTask` directly in all new code.
  *
  * @author Ryan Massie (rmassie)
- * @date 4/8/2026
+ * @date 4/10/2026
  */
+
+#include "sputteros/osal/tasks/IBackgroundTask.h"
+
 namespace SputterOS
 {
 
-class IAsyncTask : public ITask
+class IAsyncTask : public IBackgroundTask
 {
   public:
-    /**
-     * @brief Core affinity marker — always returns true for async tasks.
-     */
-    bool isAsync() const final { return true; }
+    /** @brief Virtual destructor. */
+    virtual ~IAsyncTask() = default;
 };
 
 } // namespace SputterOS

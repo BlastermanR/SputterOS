@@ -20,7 +20,7 @@
 #include "MockUserApplication.h"
 #include "sputteros/builder/SystemBuilder.h"
 #include "sputteros/hal/base/ISputterDevice.h"
-#include "sputteros/osal/tasks/ITask.h"
+#include "sputteros/osal/tasks/IScheduledTask.h"
 #include <array>
 #include <gtest/gtest.h>
 
@@ -74,34 +74,37 @@ class StubDevice : public ISputterDevice
 /**
  * @brief A user task whose validateDependencies always passes.
  */
-class SatisfiedTask : public ITask
+class SatisfiedTask : public IScheduledTask
 {
   public:
-    void init() override {}
-    void tick(SputterMicros) override {}
-    bool validateDependencies() const override { return true; }
+    void          init() override {}
+    void          tick(SputterMicros) override {}
+    SputterMicros periodUs() const override { return 10000; }
+    bool          validateDependencies() const override { return true; }
 };
 
 /**
  * @brief A user task whose validateDependencies always fails.
  */
-class UnsatisfiedTask : public ITask
+class UnsatisfiedTask : public IScheduledTask
 {
   public:
-    void init() override {}
-    void tick(SputterMicros) override {}
-    bool validateDependencies() const override { return false; }
+    void          init() override {}
+    void          tick(SputterMicros) override {}
+    SputterMicros periodUs() const override { return 10000; }
+    bool          validateDependencies() const override { return false; }
 };
 
 /**
  * @brief A user task that requires at least one registered device.
  */
-class DeviceDependentTask : public ITask
+class DeviceDependentTask : public IScheduledTask
 {
   public:
-    void init() override {}
-    void tick(SputterMicros) override {}
-    bool validateDependencies() const override { return deviceCount() >= 1; }
+    void          init() override {}
+    void          tick(SputterMicros) override {}
+    SputterMicros periodUs() const override { return 10000; }
+    bool          validateDependencies() const override { return deviceCount() >= 1; }
 };
 
 // ===========================================================================
@@ -120,7 +123,7 @@ TEST(SystemBuilderDep, Build_SucceedsWithSatisfiedTask)
     SatisfiedTask      userTask;
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
     builder.setStream(&stream);
-    builder.core(0).addTask(&userTask);
+    builder.core(0).addScheduledTask(&userTask);
 
     BuildResult result = builder.build();
     EXPECT_TRUE(result.ok) << result.error;
@@ -138,7 +141,7 @@ TEST(SystemBuilderDep, Build_FailsWithUnsatisfiedTask)
     UnsatisfiedTask    userTask;
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
     builder.setStream(&stream);
-    builder.core(0).addTask(&userTask);
+    builder.core(0).addScheduledTask(&userTask);
 
     BuildResult result = builder.build();
     EXPECT_FALSE(result.ok);
@@ -157,7 +160,7 @@ TEST(SystemBuilderDep, Build_FailsWhenDeviceMissing)
     DeviceDependentTask userTask; // no addDevice() call → validateDependencies() fails
     SystemBuilder<Cfg>  builder(&app, monitors.data(), monitors.size());
     builder.setStream(&stream);
-    builder.core(0).addTask(&userTask);
+    builder.core(0).addScheduledTask(&userTask);
 
     BuildResult result = builder.build();
     EXPECT_FALSE(result.ok);
@@ -178,7 +181,7 @@ TEST(SystemBuilderDep, Build_SucceedsWhenDeviceProvided)
     userTask.addDevice(&dev);
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
     builder.setStream(&stream);
-    builder.core(0).addTask(&userTask);
+    builder.core(0).addScheduledTask(&userTask);
 
     BuildResult result = builder.build();
     EXPECT_TRUE(result.ok) << result.error;
@@ -197,8 +200,8 @@ TEST(SystemBuilderDep, Build_FailsIfAnyTaskUnsatisfied)
     UnsatisfiedTask    badTask;
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
     builder.setStream(&stream);
-    builder.core(0).addTask(&goodTask);
-    builder.core(0).addTask(&badTask);
+    builder.core(0).addScheduledTask(&goodTask);
+    builder.core(0).addScheduledTask(&badTask);
 
     BuildResult result = builder.build();
     EXPECT_FALSE(result.ok);
@@ -210,7 +213,7 @@ TEST(SystemBuilderDep, Build_InfraOnlyMode_NoAppNoValidation)
     using Cfg = DepTestCfg<6>;
     SatisfiedTask      userTask;
     SystemBuilder<Cfg> builder;
-    builder.core(0).addTask(&userTask);
+    builder.core(0).addScheduledTask(&userTask);
 
     BuildResult result = builder.build();
     EXPECT_TRUE(result.ok) << result.error;
@@ -296,7 +299,7 @@ TEST(SystemBuilderDep, Build_PopulatesTaskCountOnCore0)
     SatisfiedTask      userTask;
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
     builder.setStream(&stream);
-    builder.core(0).addTask(&userTask);
+    builder.core(0).addScheduledTask(&userTask);
 
     BuildResult result = builder.build();
     ASSERT_TRUE(result.ok) << result.error;

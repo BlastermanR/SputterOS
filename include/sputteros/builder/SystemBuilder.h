@@ -15,12 +15,12 @@
  *
  * ### Goals
  * - Replace manual `main.cpp` wiring with a declarative API.
- * - Hide kernel task construction — the user never sees ControlTask,
- *   CommsTask, or DiagnosticsTask directly.
+ * - Hide kernel task construction — the user never sees ScheduledControlTask,
+ *   ScheduledCommsTask, or BackgroundDiagnosticsTask directly.
  * - Populate `System<Cfg>` with the lock-free command queue, inter-core
  *   watchdog, and kernel tasks.
- * - Enforce core affinity: `ICriticalTask` on Core 0, `IAsyncTask` on
- *   Core 1 (single-core: all tasks on Core 0).
+ * - Enforce type-safe task registration: `IScheduledTask` on cores via
+ *   `addScheduledTask()`, `IBackgroundTask` via `addBackgroundTask()`.
  * - Zero heap allocation — all storage is statically sized from `Cfg`.
  *
  * ### Usage
@@ -37,7 +37,7 @@
  *   builder.setWatchdogKick(myWatchdogKickFn);
  *
  *   // Optionally add user tasks
- *   builder.core(0).addTask(&myCustomTask);
+ *   builder.core(0).addScheduledTask(&myCustomTask);
  *
  *   // Validate and finalize
  *   auto result = builder.build();
@@ -57,6 +57,8 @@
 #include "sputteros/kernel/System.h"
 #include "sputteros/kernel/interfaces/ISafetyMonitor.h"
 #include "sputteros/kernel/interfaces/IUserApplication.h"
+#include "sputteros/osal/tasks/IBackgroundTask.h"
+#include "sputteros/osal/tasks/IScheduledTask.h"
 #include "sputteros/osal/tasks/ITask.h"
 
 #include <cassert>
@@ -124,12 +126,12 @@ template <typename Cfg> class CoreBuilder
     // -----------------------------------------------------------------------
 
     /**
-     * @brief Register a task to run on this core.
-     * @param task Non-null task pointer whose lifetime must exceed the
-     *        system runtime.
+     * @brief Register a scheduled task to run on this core.
+     * @param task Non-null `IScheduledTask` pointer whose lifetime must
+     *        exceed the system runtime.
      * @return Reference to this builder for chaining.
      */
-    CoreBuilder &addTask(ITask *task)
+    CoreBuilder &addScheduledTask(IScheduledTask *task)
     {
         if (m_core && task)
         {
@@ -234,9 +236,10 @@ template <typename Cfg> class SystemBuilder
      * @brief Construct a SystemBuilder with kernel dependencies.
      *
      * When `app` is non-null, `build()` will create the three kernel
-     * tasks (ControlTask, CommsTask, DiagnosticsTask) and register them
-     * on the correct cores. When `app` is null, the builder operates in
-     * infrastructure-only mode for build-time smoke tests.
+     * tasks (ScheduledControlTask, ScheduledCommsTask,
+     * BackgroundDiagnosticsTask) and register them on the correct cores.
+     * When `app` is null, the builder operates in infrastructure-only
+     * mode for build-time smoke tests.
      *
      * @param app: User application ticked by the kernel each cycle (nullable).
      * @param monitors: Array of safety monitors evaluated each tick (nullable if count is 0).
@@ -282,7 +285,7 @@ template <typename Cfg> class SystemBuilder
      * @param watchdogKick: Platform callback to kick the hardware watchdog (nullable).
      * @return Reference to this builder for chaining.
      */
-    SystemBuilder &setWatchdogKick(typename Kernel::DiagnosticsTask::WatchdogKickFn watchdogKick)
+    SystemBuilder &setWatchdogKick(typename Kernel::BackgroundDiagnosticsTask::WatchdogKickFn watchdogKick)
     {
         m_watchdogKick = watchdogKick;
         return *this;
@@ -311,14 +314,33 @@ template <typename Cfg> class SystemBuilder
     /**
      * @brief Access the `CoreBuilder` for a given core ID.
      *
-     * Use this to register additional user tasks on specific cores.
-     * Kernel tasks are auto-registered by `build()` and do not need
-     * to be added manually.
+     * Use this to register additional user scheduled tasks on specific
+     * cores. Kernel tasks are auto-registered by `build()` and do not
+     * need to be added manually.
      *
      * @param coreId Zero-based core identifier. Must be < kCoreCount.
      * @return Reference to the per-core builder for fluent chaining.
      */
     CoreBuilder<Cfg> &core(std::size_t coreId) { return m_cores[coreId < kCoreCount ? coreId : 0]; }
+
+    /**
+     * @brief Register a background task (no core affinity).
+     *
+     * Background tasks run in idle time with a budget cap. They are
+     * stored in `System<Cfg>::s_backgroundTasks[]`.
+     *
+     * @param task Non-null `IBackgroundTask` pointer whose lifetime must
+     *        exceed the system runtime.
+     * @return Reference to this builder for chaining.
+     */
+    SystemBuilder &addBackgroundTask(IBackgroundTask *task)
+    {
+        if (task && S::s_backgroundTaskCount < CfgMaxBackgroundTasks<Cfg>::value)
+        {
+            S::s_backgroundTasks[S::s_backgroundTaskCount++] = task;
+        }
+        return *this;
+    }
 
     // -----------------------------------------------------------------------
     // Build
@@ -330,14 +352,16 @@ template <typename Cfg> class SystemBuilder
      *
      * When `app` is non-null, the following kernel tasks are created
      * and pinned automatically:
-     * - `ControlTask` (ICriticalTask) → Core 0
-     * - `CommsTask` (IAsyncTask) → Core 1 (or Core 0 if single-core)
-     * - `DiagnosticsTask` (IAsyncTask) → Core 1 (or Core 0 if single-core)
+     * - `ScheduledControlTask` (IScheduledTask) → Core 0
+     * - `ScheduledCommsTask` (IScheduledTask) → Core 1 (or Core 0 if single-core)
+     * - `BackgroundDiagnosticsTask` (IBackgroundTask) → background ring
+     *   (also temporarily on a core for Phase 1 dispatch compatibility)
      *
      * Performs validation:
      * 1. At least one core has tasks (or kernel tasks are being created).
-     * 2. Core affinity: no ICriticalTask on Core 1 (multi-core only).
-     * 3. Core affinity: no IAsyncTask on Core 0 (multi-core only).
+     * 2. Scheduled task period ≥ `CfgMinSchedulePeriodUs<Cfg>`.
+     * 3. No duplicate task pointer across cores.
+     * 4. Task dependency validation.
      *
      * @return `BuildResult` with `ok == true` on success, or a descriptive
      *         error string on failure.
@@ -358,21 +382,28 @@ template <typename Cfg> class SystemBuilder
             S::s_diagsTask.emplace(Kernel::KernelConstructTag{}, S::s_errorLogger, S::s_memProfiler, m_watchdogKick,
                                    CfgControlBudgetUs<Cfg>::value);
 
-            // Auto-register kernel tasks on correct cores.
-            // Prepend in reverse order so the final order is:
-            //   [ControlTask, CommsTask, DiagnosticsTask, ...user tasks...]
+            // Auto-register kernel scheduled tasks on correct cores.
+            // Prepend in reverse order so the final tick order is:
+            //   [ScheduledControlTask, ScheduledCommsTask, BackgroundDiagnosticsTask, ...user tasks...]
             if constexpr (kMultiCore)
             {
                 m_cores[0].prependTask(&*S::s_controlTask);
+                // TODO: Phase 3 — remove DiagnosticsTask from core task list when SystemScheduler dispatches background
+                // tasks
                 m_cores[1].prependTask(&*S::s_diagsTask);
                 m_cores[1].prependTask(&*S::s_commsTask);
             }
             else
             {
+                // TODO: Phase 3 — remove DiagnosticsTask from core task list when SystemScheduler dispatches background
+                // tasks
                 m_cores[0].prependTask(&*S::s_diagsTask);
                 m_cores[0].prependTask(&*S::s_commsTask);
                 m_cores[0].prependTask(&*S::s_controlTask);
             }
+
+            // Register BackgroundDiagnosticsTask in the background task ring.
+            S::s_backgroundTasks[S::s_backgroundTaskCount++] = &*S::s_diagsTask;
         }
 
         // --- Check that at least one core has tasks ---
@@ -390,13 +421,12 @@ template <typename Cfg> class SystemBuilder
             return {false, "No tasks registered on any core"};
         }
 
-        // --- Core affinity validation (multi-core only) ---
-        if constexpr (kMultiCore)
+        // --- Scheduling constraint validation ---
         {
-            BuildResult affinityResult = validateCoreAffinity();
-            if (!affinityResult.ok)
+            BuildResult schedResult = validateSchedulingConstraints();
+            if (!schedResult.ok)
             {
-                return affinityResult;
+                return schedResult;
             }
         }
 
@@ -445,6 +475,7 @@ template <typename Cfg> class SystemBuilder
         }
 
         S::s_built = true;
+        S::transitionTo(Kernel::KernelState::CONFIGURED);
         return {true, nullptr};
     }
 
@@ -454,32 +485,85 @@ template <typename Cfg> class SystemBuilder
     // -----------------------------------------------------------------------
 
     /**
-     * @brief Verify that ICriticalTask objects are on Core 0 and
-     *        IAsyncTask objects are on Core 1 in multi-core configurations.
-     * @return BuildResult with ok=false if an affinity violation is found.
+     * @brief Validate scheduling constraints for all registered tasks.
+     *
+     * Checks:
+     * 1. Period floor: every `IScheduledTask` must have `periodUs() >=
+     *    CfgMinSchedulePeriodUs<Cfg>`.
+     * 2. No duplicate task registration (same pointer on multiple slots/cores).
+     * 3. Utilization check: warn if per-core utilization exceeds 80%
+     *    (logged to `ErrorLogger`, does not fail the build).
+     *
+     * @return BuildResult with ok=false if a hard constraint is violated.
      */
-    BuildResult validateCoreAffinity() const
+    BuildResult validateSchedulingConstraints() const
     {
-        // Core 0 must not contain IAsyncTask
-        for (std::size_t t = 0; t < m_cores[0].taskCount(); ++t)
-        {
-            ITask *tsk = m_cores[0].task(t);
-            if (tsk && tsk->isAsync())
-            {
-                return {false, "Core affinity violation: IAsyncTask on Core 0"};
-            }
-        }
-
-        // Core 1+ must not contain ICriticalTask
-        for (std::size_t c = 1; c < kCoreCount; ++c)
+        // --- Period floor check ---
+        for (std::size_t c = 0; c < kCoreCount; ++c)
         {
             for (std::size_t t = 0; t < m_cores[c].taskCount(); ++t)
             {
                 ITask *tsk = m_cores[c].task(t);
-                if (tsk && tsk->isCritical())
+                if (tsk && tsk->isScheduled())
                 {
-                    return {false, "Core affinity violation: ICriticalTask on non-zero core"};
+                    auto *scheduled = static_cast<IScheduledTask *>(tsk);
+                    if (scheduled->periodUs() > 0 && scheduled->periodUs() < CfgMinSchedulePeriodUs<Cfg>::value)
+                    {
+                        return {false, "Scheduled task period below minimum"};
+                    }
                 }
+            }
+        }
+
+        // --- No duplicate task registration ---
+        for (std::size_t c1 = 0; c1 < kCoreCount; ++c1)
+        {
+            for (std::size_t t1 = 0; t1 < m_cores[c1].taskCount(); ++t1)
+            {
+                ITask *tsk1 = m_cores[c1].task(t1);
+                if (!tsk1)
+                    continue;
+                for (std::size_t c2 = c1; c2 < kCoreCount; ++c2)
+                {
+                    std::size_t startT = (c2 == c1) ? t1 + 1 : 0;
+                    for (std::size_t t2 = startT; t2 < m_cores[c2].taskCount(); ++t2)
+                    {
+                        if (m_cores[c2].task(t2) == tsk1)
+                        {
+                            return {false, "Duplicate task registration detected"};
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Utilization warning (best-effort, Phase 1) ---
+        for (std::size_t c = 0; c < kCoreCount; ++c)
+        {
+            uint64_t    numerator      = 0; // sum of (wcet * 1000 / period)
+            std::size_t scheduledCount = 0;
+
+            for (std::size_t t = 0; t < m_cores[c].taskCount(); ++t)
+            {
+                ITask *tsk = m_cores[c].task(t);
+                if (tsk && tsk->isScheduled())
+                {
+                    auto         *scheduled = static_cast<IScheduledTask *>(tsk);
+                    SputterMicros wcet      = scheduled->declaredWcetUs();
+                    SputterMicros period    = scheduled->periodUs();
+                    if (wcet > 0 && period > 0)
+                    {
+                        // Accumulate utilization as (wcet / period) scaled by 1000
+                        numerator += (wcet * 1000) / period;
+                        ++scheduledCount;
+                    }
+                }
+            }
+            // If utilization > 0.8 (i.e. numerator > 800), log a warning
+            if (scheduledCount > 0 && numerator > 800)
+            {
+                S::s_errorLogger.log(ErrorLogger::ErrorCode::SENSOR_ERROR, SputterMicros(0),
+                                     static_cast<float>(numerator) / 1000.0f);
             }
         }
 
@@ -521,8 +605,8 @@ template <typename Cfg> class SystemBuilder
     std::size_t            m_monitorCount; /**< @brief Number of safety monitors. */
     IStream               *m_stream;       /**< @brief Byte stream for CommsTask. */
 
-    typename Kernel::DiagnosticsTask::WatchdogKickFn m_watchdogKick; /**< @brief Watchdog kick. */
-    MicrosecondSource                                m_clockSource;  /**< @brief Platform \u00b5s clock. */
+    typename Kernel::BackgroundDiagnosticsTask::WatchdogKickFn m_watchdogKick; /**< @brief Watchdog kick. */
+    MicrosecondSource                                          m_clockSource;  /**< @brief Platform \u00b5s clock. */
 
     // -----------------------------------------------------------------------
     // Per-core builders (write into System<Cfg>::s_cores)

@@ -15,8 +15,8 @@
  *   SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
  *   builder.setStream(&stream);
  *   builder.setWatchdogKick(nullptr);
- *   builder.core(0).addTask(&pingTask);   // Core 0 user task
- *   builder.core(1).addTask(&pongTask);   // Core 1 user task
+ *   builder.core(0).addScheduledTask(&pingTask);   // Core 0 user task
+ *   builder.core(1).addScheduledTask(&pongTask);   // Core 1 user task
  *   builder.build();
  *
  *   // ── Core 1 thread ──────────────────────────────────────────────────
@@ -41,8 +41,8 @@
  *
  * | Core | Tasks (tick order) |
  * |------|-------------------|
- * | 0    | ControlTask → PingTask |
- * | 1    | CommsTask → DiagnosticsTask → PongTask |
+ * | 0    | ScheduledControlTask → PingTask |
+ * | 1    | ScheduledCommsTask → BackgroundDiagnosticsTask → PongTask |
  *
  * ### Counter exchange protocol
  *
@@ -124,10 +124,11 @@ int main()
     builder.setWatchdogKick(nullptr);
 
     // Register user tasks on the appropriate cores.
-    // Kernel tasks (ControlTask, CommsTask, DiagnosticsTask) are auto-placed
-    // by build(): ControlTask → Core 0, CommsTask + DiagnosticsTask → Core 1.
-    builder.core(0).addTask(&pingTask);
-    builder.core(1).addTask(&pongTask);
+    // Kernel tasks (ScheduledControlTask, ScheduledCommsTask, BackgroundDiagnosticsTask) are
+    // auto-placed by build(): ScheduledControlTask → Core 0,
+    // ScheduledCommsTask + BackgroundDiagnosticsTask → Core 1.
+    builder.core(0).addScheduledTask(&pingTask);
+    builder.core(1).addScheduledTask(&pongTask);
 
     const BuildResult result = builder.build();
     if (!result)
@@ -143,32 +144,34 @@ int main()
     // Mirrors the role of `multicore_launch_core1()` on the RP2350.
     // The lambda captures by reference; it is safe because main() waits
     // for the thread to join before any captured objects are destroyed.
-    std::thread core1Thread([&sync, &pongTelemetry]() {
-        // Signal that Core 1 has started local initialisation.
-        sync.setInit(1);
-
-        // Initialise all tasks registered on Core 1.
-        System<Cfg>::init(1);
-
-        // Wait until Core 0 is also READY (or timeout → error).
-        if (!sync.startupBarrier(1, ms{2000}))
+    std::thread core1Thread(
+        [&sync, &pongTelemetry]()
         {
-            return; // startupBarrier sets ERROR state on timeout
-        }
+            // Signal that Core 1 has started local initialisation.
+            sync.setInit(1);
 
-        // Core 1 tick loop — runs until PingTask clears g_running.
-        while (PingPong::g_running.load(std::memory_order_acquire))
-        {
-            const SputterMicros now = PingPong::platformGetTimeMicros();
-            System<Cfg>::watchdog().kick(1, now);
-            System<Cfg>::tick(1, now);
-            pongTelemetry.drain(stdoutWrite);
-            std::this_thread::sleep_for(std::chrono::milliseconds{1});
-        }
+            // Initialise all tasks registered on Core 1.
+            System<Cfg>::init(1);
 
-        // Orderly shutdown — signal and wait for Core 0.
-        sync.shutdownBarrier(1, ms{2000});
-    });
+            // Wait until Core 0 is also READY (or timeout → error).
+            if (!sync.startupBarrier(1, ms{2000}))
+            {
+                return; // startupBarrier sets ERROR state on timeout
+            }
+
+            // Core 1 tick loop — runs until PingTask clears g_running.
+            while (PingPong::g_running.load(std::memory_order_acquire))
+            {
+                const SputterMicros now = PingPong::platformGetTimeMicros();
+                System<Cfg>::watchdog().kick(1, now);
+                System<Cfg>::tick(1, now);
+                pongTelemetry.drain(stdoutWrite);
+                std::this_thread::sleep_for(std::chrono::milliseconds{1});
+            }
+
+            // Orderly shutdown — signal and wait for Core 0.
+            sync.shutdownBarrier(1, ms{2000});
+        });
 
     // -- Core 0 startup sequence --------------------------------------------
     // Signal that Core 0 has started local initialisation.

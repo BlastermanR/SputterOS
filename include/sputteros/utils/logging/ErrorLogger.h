@@ -46,7 +46,8 @@ class ErrorLogger
         ARC_DETECTED     = 4, /**< @brief Plasma arc event detected. */
         SENSOR_ERROR     = 5, /**< @brief A HAL sensor reported an error. */
         WATCHDOG_KICK    = 6, /**< @brief Watchdog timer was kicked. */
-        TIMER_ROLLOVER   = 7  /**< @brief System timer wrapped around. */
+        TIMER_ROLLOVER   = 7, /**< @brief System timer wrapped around. */
+        INVALID_STATE    = 8  /**< @brief Invalid kernel state transition attempted. */
     };
 
     /**

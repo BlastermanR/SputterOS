@@ -61,11 +61,13 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "sputteros/osal/SputterTime.h"
+
 namespace SputterOS
 {
 
-class ICriticalTask;
-class IAsyncTask;
+class IScheduledTask;
+class IBackgroundTask;
 
 // =========================================================================
 // Fixed capacity constants
@@ -118,16 +120,16 @@ template <typename Cfg> struct ConfigValidator
 // =========================================================================
 
 /**
- * @brief Compile-time check: true if T is (or derives from) ICriticalTask.
+ * @brief Compile-time check: true if T is (or derives from) IScheduledTask.
  */
-template <typename T> struct IsCriticalTask : std::is_base_of<ICriticalTask, T>
+template <typename T> struct IsScheduledTask : std::is_base_of<IScheduledTask, T>
 {
 };
 
 /**
- * @brief Compile-time check: true if T is (or derives from) IAsyncTask.
+ * @brief Compile-time check: true if T is (or derives from) IBackgroundTask.
  */
-template <typename T> struct IsAsyncTask : std::is_base_of<IAsyncTask, T>
+template <typename T> struct IsBackgroundTask : std::is_base_of<IBackgroundTask, T>
 {
 };
 
@@ -252,6 +254,133 @@ template <typename Cfg, typename = void> struct CfgMaxLineLen
 template <typename Cfg> struct CfgMaxLineLen<Cfg, std::void_t<decltype(Cfg::kMaxLineLen)>>
 {
     static constexpr std::size_t value = Cfg::kMaxLineLen;
+};
+
+// =========================================================================
+// Scheduling config extractors (§10.7)
+// =========================================================================
+
+/**
+ * @brief Extracts `Cfg::kMaxSlotsPerCore` or defaults to 32.
+ *
+ * Controls the maximum number of scheduling slots available per core
+ * in the partitioned AMP scheduler.
+ */
+template <typename Cfg, typename = void> struct CfgMaxSlotsPerCore
+{
+    static constexpr std::size_t value = 32;
+};
+
+template <typename Cfg> struct CfgMaxSlotsPerCore<Cfg, std::void_t<decltype(Cfg::kMaxSlotsPerCore)>>
+{
+    static constexpr std::size_t value = Cfg::kMaxSlotsPerCore;
+};
+
+/**
+ * @brief Extracts `Cfg::kMaxBackgroundTasks` or defaults to 16.
+ *
+ * Controls the maximum number of background tasks that can be registered.
+ */
+template <typename Cfg, typename = void> struct CfgMaxBackgroundTasks
+{
+    static constexpr std::size_t value = 16;
+};
+
+template <typename Cfg> struct CfgMaxBackgroundTasks<Cfg, std::void_t<decltype(Cfg::kMaxBackgroundTasks)>>
+{
+    static constexpr std::size_t value = Cfg::kMaxBackgroundTasks;
+};
+
+/**
+ * @brief Extracts `Cfg::kCommsBudgetUs` or defaults to 1000 µs.
+ *
+ * Maximum time budget for comms processing per scheduling cycle.
+ */
+template <typename Cfg, typename = void> struct CfgCommsBudgetUs
+{
+    static constexpr SputterMicros value = 1000;
+};
+
+template <typename Cfg> struct CfgCommsBudgetUs<Cfg, std::void_t<decltype(Cfg::kCommsBudgetUs)>>
+{
+    static constexpr SputterMicros value = Cfg::kCommsBudgetUs;
+};
+
+/**
+ * @brief Extracts `Cfg::kDiagsBudgetUs` or defaults to 10000 µs.
+ *
+ * Maximum time budget for diagnostics processing per scheduling cycle.
+ */
+template <typename Cfg, typename = void> struct CfgDiagsBudgetUs
+{
+    static constexpr SputterMicros value = 10000;
+};
+
+template <typename Cfg> struct CfgDiagsBudgetUs<Cfg, std::void_t<decltype(Cfg::kDiagsBudgetUs)>>
+{
+    static constexpr SputterMicros value = Cfg::kDiagsBudgetUs;
+};
+
+/**
+ * @brief Extracts `Cfg::kMinGapSliceUs` or defaults to 10 µs.
+ *
+ * Minimum idle gap between scheduled task slices.
+ */
+template <typename Cfg, typename = void> struct CfgMinGapSliceUs
+{
+    static constexpr SputterMicros value = 10;
+};
+
+template <typename Cfg> struct CfgMinGapSliceUs<Cfg, std::void_t<decltype(Cfg::kMinGapSliceUs)>>
+{
+    static constexpr SputterMicros value = Cfg::kMinGapSliceUs;
+};
+
+/**
+ * @brief Extracts `Cfg::kMinSchedulePeriodUs` or defaults to 10 µs.
+ *
+ * Minimum period between scheduler invocations.
+ */
+template <typename Cfg, typename = void> struct CfgMinSchedulePeriodUs
+{
+    static constexpr SputterMicros value = 10;
+};
+
+template <typename Cfg> struct CfgMinSchedulePeriodUs<Cfg, std::void_t<decltype(Cfg::kMinSchedulePeriodUs)>>
+{
+    static constexpr SputterMicros value = Cfg::kMinSchedulePeriodUs;
+};
+
+/**
+ * @brief Extracts `Cfg::kStrictWCET` or defaults to false.
+ *
+ * When true, the scheduler enforces strict worst-case execution time
+ * monitoring and will flag overruns as errors.
+ */
+template <typename Cfg, typename = void> struct CfgStrictWCET
+{
+    static constexpr bool value = false;
+};
+
+template <typename Cfg> struct CfgStrictWCET<Cfg, std::void_t<decltype(Cfg::kStrictWCET)>>
+{
+    static constexpr bool value = Cfg::kStrictWCET;
+};
+
+/**
+ * @brief Extracts `Cfg::kIsrContextBudgetUs` or defaults to {0, 0}.
+ *
+ * Per-core ISR context budget in microseconds. The specialization binds
+ * directly to the user-supplied array, avoiding copies.
+ */
+template <typename Cfg, typename = void> struct CfgIsrContextBudgetUs
+{
+    static constexpr SputterMicros value[2] = {0, 0};
+};
+
+template <typename Cfg> struct CfgIsrContextBudgetUs<Cfg, std::void_t<decltype(Cfg::kIsrContextBudgetUs[0])>>
+{
+    static constexpr auto &value = Cfg::kIsrContextBudgetUs;
 };
 
 } // namespace SputterOS

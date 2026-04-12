@@ -35,7 +35,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format cmake g++ make ninja-build
+          sudo apt-get install -y cmake g++ make ninja-build
+          pip install clang-format==21.1.8
 
       - name: Run formatter
         run: make format

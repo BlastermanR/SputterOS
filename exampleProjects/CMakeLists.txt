@@ -45,3 +45,6 @@ enable_testing()
 # ── Example projects ──────────────────────────────────────────────────────────
 add_subdirectory(heartbeat)
 add_subdirectory(pingpong)
+add_subdirectory(multirate)
+add_subdirectory(sensorpoll)
+add_subdirectory(lifecycle)

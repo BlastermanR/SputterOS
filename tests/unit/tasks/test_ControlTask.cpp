@@ -1,6 +1,6 @@
 /**
  * @file test_ControlTask.cpp
- * @brief Unit tests for Kernel::ControlTask<Cfg>.
+ * @brief Unit tests for Kernel::ScheduledControlTask<Cfg>.
  *
  * Uses MockUserApplication<Cfg> (IUserApplication<Cfg>) and MockSafetyMonitor
  * (ISafetyMonitor) to verify safety evaluation ordering, command draining,
@@ -39,7 +39,8 @@ class ControlTaskTest : public ::testing::Test
     NiceMock<MockSafetyMonitor>        monitor2;
     std::array<ISafetyMonitor *, 2>    monitors = {&monitor1, &monitor2};
 
-    ControlTask<Cfg> task = KernelTestAccess::makeControlTask<Cfg>(&queue, &app, monitors.data(), monitors.size());
+    ScheduledControlTask<Cfg> task =
+        KernelTestAccess::makeControlTask<Cfg>(&queue, &app, monitors.data(), monitors.size());
 
     void SetUp() override
     {
@@ -69,13 +70,15 @@ TEST_F(ControlTaskTest, ValidateDependencies_AllNonNull_ReturnsTrue) { EXPECT_TR
 
 TEST_F(ControlTaskTest, ValidateDependencies_NullQueue_ReturnsFalse)
 {
-    auto bad = KernelTestAccess::makeControlTask<Cfg>(nullptr, &app, monitors.data(), monitors.size());
+    ScheduledControlTask<Cfg> bad =
+        KernelTestAccess::makeControlTask<Cfg>(nullptr, &app, monitors.data(), monitors.size());
     EXPECT_FALSE(bad.validateDependencies());
 }
 
 TEST_F(ControlTaskTest, ValidateDependencies_NullApp_ReturnsFalse)
 {
-    auto bad = KernelTestAccess::makeControlTask<Cfg>(&queue, nullptr, monitors.data(), monitors.size());
+    ScheduledControlTask<Cfg> bad =
+        KernelTestAccess::makeControlTask<Cfg>(&queue, nullptr, monitors.data(), monitors.size());
     EXPECT_FALSE(bad.validateDependencies());
 }
 

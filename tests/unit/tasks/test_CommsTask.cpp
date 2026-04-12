@@ -1,6 +1,6 @@
 /**
  * @file test_CommsTask.cpp
- * @brief Unit tests for CommsTask<Cfg>.
+ * @brief Unit tests for ScheduledCommsTask<Cfg>.
  *
  * Feeds synthetic byte streams through MockStreamReader and verifies
  * that valid commands are pushed to MockMessageQueue<Cfg>.
@@ -51,7 +51,7 @@ class CommsTaskTest : public ::testing::Test
   protected:
     NiceMock<MockStreamReader>      stream;
     NiceMock<MockMessageQueue<Cfg>> queue;
-    CommsTask<Cfg>                  task = KernelTestAccess::makeCommsTask<Cfg>(&stream, &queue);
+    ScheduledCommsTask<Cfg>         task = KernelTestAccess::makeCommsTask<Cfg>(&stream, &queue);
 
     void SetUp() override
     {
@@ -69,13 +69,13 @@ TEST_F(CommsTaskTest, ValidateDependencies_AllNonNull_ReturnsTrue) { EXPECT_TRUE
 
 TEST_F(CommsTaskTest, ValidateDependencies_NullStream_ReturnsFalse)
 {
-    auto bad = KernelTestAccess::makeCommsTask<Cfg>(nullptr, &queue);
+    ScheduledCommsTask<Cfg> bad = KernelTestAccess::makeCommsTask<Cfg>(nullptr, &queue);
     EXPECT_FALSE(bad.validateDependencies());
 }
 
 TEST_F(CommsTaskTest, ValidateDependencies_NullQueue_ReturnsFalse)
 {
-    auto bad = KernelTestAccess::makeCommsTask<Cfg>(&stream, nullptr);
+    ScheduledCommsTask<Cfg> bad = KernelTestAccess::makeCommsTask<Cfg>(&stream, nullptr);
     EXPECT_FALSE(bad.validateDependencies());
 }
 

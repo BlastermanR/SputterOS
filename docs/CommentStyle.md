@@ -16,7 +16,7 @@ Use the following structure for header comments in `.h` and `.cpp` files.
  *
  * Detailed Description
  *
- * @author Ryan Massie (rmassie)
+ * @author *Contributer*
  * @date Creation Date
  */
 ```

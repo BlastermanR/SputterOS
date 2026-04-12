@@ -33,7 +33,7 @@ class TimerRollover : public ::testing::Test
     {
         SystemBuilder<Cfg> builder(&app, monitors, 1);
         builder.setStream(&stream).setWatchdogKick(nullptr);
-        builder.core(0).addTask(&userTask);
+        builder.core(0).addScheduledTask(&userTask);
         ASSERT_TRUE(builder.build());
         System<Cfg>::init(0);
     }

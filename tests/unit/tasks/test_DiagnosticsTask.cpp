@@ -1,6 +1,6 @@
 /**
  * @file test_DiagnosticsTask.cpp
- * @brief Unit tests for DiagnosticsTask.
+ * @brief Unit tests for BackgroundDiagnosticsTask.
  *
  * Uses real ErrorLogger and MemoryProfiler instances (kernel-owned).
  * WatchdogKickFn is a plain function pointer — a static function
@@ -23,7 +23,7 @@
  */
 
 #include "../mocks/KernelTestAccess.h"
-#include "sputteros/kernel/DiagnosticsTask.h"
+#include "sputteros/kernel/BackgroundDiagnosticsTask.h"
 #include "sputteros/osal/SputterTime.h"
 #include "sputteros/osal/tasks/ITask.h"
 #include "sputteros/utils/MemoryProfiler.h"

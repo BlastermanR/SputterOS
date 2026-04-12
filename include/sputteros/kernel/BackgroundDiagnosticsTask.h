@@ -1,16 +1,16 @@
-#ifndef SPUTTEROS_KERNEL_DIAGNOSTICSTASK_H
-#define SPUTTEROS_KERNEL_DIAGNOSTICSTASK_H
+#ifndef SPUTTEROS_KERNEL_BACKGROUNDDIAGNOSTICSTASK_H
+#define SPUTTEROS_KERNEL_BACKGROUNDDIAGNOSTICSTASK_H
 
 #include "sputteros/kernel/KernelConstructTag.h"
 #include "sputteros/kernel/TaskTimer.h"
-#include "sputteros/osal/tasks/IAsyncTask.h"
+#include "sputteros/osal/tasks/IBackgroundTask.h"
 #include "sputteros/utils/MemoryProfiler.h"
 #include "sputteros/utils/logging/ErrorLogger.h"
 #include <cstddef>
 #include <cstdint>
 
 /**
- * @file DiagnosticsTask.h
+ * @file BackgroundDiagnosticsTask.h
  * @brief Kernel health monitor, watchdog, per-task timing, and memory profiling.
  *
  * Monitors per-task execution times via `TaskTimer` instances embedded in
@@ -19,7 +19,7 @@
  * `MemoryProfiler`, and kicks the hardware watchdog timer to prevent a
  * system reset.
  *
- * `DiagnosticsTask` aggregates timing data from all registered tasks:
+ * `BackgroundDiagnosticsTask` aggregates timing data from all registered tasks:
  * each `ITask` has a `TaskTimer` that `System::tick()` instruments
  * automatically. This task reads those timers every cycle, logging any
  * budget violations to `ErrorLogger`.
@@ -29,7 +29,7 @@
  * @note `ErrorLogger` and `MemoryProfiler` are kernel-owned members of
  *       `System`. Users access them via `System<Cfg>::errorLogger()` and
  *       `System<Cfg>::memProfiler()`.
- * @note Inherits `IAsyncTask` — pinned to Core 1 in multi-core configs.
+ * @note Inherits `IBackgroundTask` — pinned to Core 1 in multi-core configs.
  *
  * @author Ryan Massie (rmassie)
  * @date 4/8/2026
@@ -45,13 +45,19 @@ namespace Kernel
 
 struct KernelTestAccess;
 
-class DiagnosticsTask : public IAsyncTask
+class BackgroundDiagnosticsTask : public IBackgroundTask
 {
   public:
     /**
      * @brief Watchdog kick callback type.
      */
     using WatchdogKickFn = void (*)();
+
+    /**
+     * @brief Maximum execution budget per dispatch in microseconds.
+     * @return Budget from the control cycle budget parameter.
+     */
+    SputterMicros maxBudgetUs() const override { return m_controlBudget; }
 
     /**
      * @brief Initialize diagnostic subsystems and record baseline memory usage.
@@ -91,8 +97,8 @@ class DiagnosticsTask : public IAsyncTask
      * @param watchdogKick: Platform-specific watchdog kick function pointer.
      * @param controlBudgetUs: Target control cycle budget in microseconds (default 10000 = 10 ms).
      */
-    DiagnosticsTask(KernelConstructTag tag, ErrorLogger &logger, MemoryProfiler &memProfiler,
-                    WatchdogKickFn watchdogKick, uint32_t controlBudgetUs = 10000);
+    BackgroundDiagnosticsTask(KernelConstructTag tag, ErrorLogger &logger, MemoryProfiler &memProfiler,
+                              WatchdogKickFn watchdogKick, uint32_t controlBudgetUs = 10000);
 
   private:
     template <typename> friend class SystemBuilder;
@@ -135,4 +141,4 @@ class DiagnosticsTask : public IAsyncTask
 } // namespace Kernel
 } // namespace SputterOS
 
-#endif // SPUTTEROS_KERNEL_DIAGNOSTICSTASK_H
+#endif // SPUTTEROS_KERNEL_BACKGROUNDDIAGNOSTICSTASK_H

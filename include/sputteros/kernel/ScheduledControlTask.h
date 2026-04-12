@@ -1,14 +1,15 @@
-#ifndef SPUTTEROS_KERNEL_CONTROLTASK_H
-#define SPUTTEROS_KERNEL_CONTROLTASK_H
+#ifndef SPUTTEROS_KERNEL_SCHEDULEDCONTROLTASK_H
+#define SPUTTEROS_KERNEL_SCHEDULEDCONTROLTASK_H
 
+#include "sputteros/ConfigTraits.h"
 #include "sputteros/kernel/KernelConstructTag.h"
 #include "sputteros/kernel/interfaces/ISafetyMonitor.h"
 #include "sputteros/kernel/interfaces/IUserApplication.h"
 #include "sputteros/osal/sync/ICommandConsumer.h"
-#include "sputteros/osal/tasks/ICriticalTask.h"
+#include "sputteros/osal/tasks/IScheduledTask.h"
 
 /**
- * @file ControlTask.h
+ * @file ScheduledControlTask.h
  * @brief Kernel control task - the deterministic execution core of SputterOS.
  *
  * Pops commands from the shared `ICommandConsumer`, evaluates safety
@@ -23,7 +24,7 @@
  * @note This is a kernel task. Its constructor requires a `KernelConstructTag` —
  *       only `SystemBuilder` may instantiate it. The instance is owned by
  *       `System<Cfg>` as an `inline static` member.
- * @note Inherits `ICriticalTask` - pinned to Core 0 in multi-core configs.
+ * @note Inherits `IScheduledTask` - pinned to Core 0 in multi-core configs.
  * @note Must run at a fixed, predictable rate (e.g. 100 Hz).
  *
  * @tparam Cfg Configuration struct providing `Command`, `kMaxCommandsPerTick`.
@@ -41,10 +42,16 @@ namespace Kernel
 
 struct KernelTestAccess;
 
-template <typename Cfg> class ControlTask : public ICriticalTask
+template <typename Cfg> class ScheduledControlTask : public IScheduledTask
 {
   public:
     using CommandStruct = typename Cfg::Command;
+
+    /**
+     * @brief The task's activation period in microseconds.
+     * @return Period from `CfgControlBudgetUs<Cfg>`.
+     */
+    SputterMicros periodUs() const override { return CfgControlBudgetUs<Cfg>::value; }
 
     /**
      * @brief Initialize the user application.
@@ -94,8 +101,8 @@ template <typename Cfg> class ControlTask : public ICriticalTask
      * @param monitors: Array of safety monitors evaluated each tick.
      * @param monitorCount: Number of elements in the monitors array.
      */
-    ControlTask(KernelConstructTag /*tag*/, ICommandConsumer<Cfg> *commandQueue, IUserApplication<Cfg> *app,
-                ISafetyMonitor **monitors, std::size_t monitorCount)
+    ScheduledControlTask(KernelConstructTag /*tag*/, ICommandConsumer<Cfg> *commandQueue, IUserApplication<Cfg> *app,
+                         ISafetyMonitor **monitors, std::size_t monitorCount)
         : m_commandQueue(commandQueue), m_app(app), m_monitors(monitors), m_monitorCount(monitorCount)
     {
     }
@@ -165,4 +172,4 @@ template <typename Cfg> class ControlTask : public ICriticalTask
 } // namespace Kernel
 } // namespace SputterOS
 
-#endif // SPUTTEROS_KERNEL_CONTROLTASK_H
+#endif // SPUTTEROS_KERNEL_SCHEDULEDCONTROLTASK_H

@@ -1,20 +1,21 @@
-#ifndef SPUTTEROS_KERNEL_COMMSTASK_H
-#define SPUTTEROS_KERNEL_COMMSTASK_H
+#ifndef SPUTTEROS_KERNEL_SCHEDULEDCOMMSTASK_H
+#define SPUTTEROS_KERNEL_SCHEDULEDCOMMSTASK_H
 
+#include "sputteros/ConfigTraits.h"
 #include "sputteros/comms/CLI.h"
 #include "sputteros/hal/devices/IStream.h"
 #include "sputteros/kernel/KernelConstructTag.h"
 #include "sputteros/osal/sync/ICommandProducer.h"
-#include "sputteros/osal/tasks/IAsyncTask.h"
+#include "sputteros/osal/tasks/IScheduledTask.h"
 
 /**
- * @file CommsTask.h
+ * @file ScheduledCommsTask.h
  * @brief Kernel communications task — stream reader to command queue bridge.
  *
  * Reads raw bytes from an `IStreamReader` (USB CDC, UART, or network),
  * feeds them through a `CommandParser`, and pushes validated command
- * packets into the shared `ICommandProducer` for the `ControlTask` to
- * consume via its `ICommandConsumer` view.
+ * packets into the shared `ICommandProducer` for the `ScheduledControlTask`
+ * to consume via its `ICommandConsumer` view.
  *
  * Also responsible for writing telemetry responses back to the host via
  * the same `IStream` write path.
@@ -22,7 +23,7 @@
  * @note This is a kernel task. Its constructor requires a `KernelConstructTag` —
  *       only `SystemBuilder` may instantiate it. The instance is owned by
  *       `System<Cfg>` as an `inline static` member.
- * @note Inherits `IAsyncTask` - pinned to Core 1 in multi-core configs.
+ * @note Inherits `IScheduledTask` - pinned to Core 1 in multi-core configs.
  * @note Sends `NACK <cmd_id> <sub_id> <value>` on queue back-pressure.
  *
  * @tparam Cfg Configuration struct providing `Command`, `CmdID`, etc.
@@ -40,10 +41,16 @@ namespace Kernel
 
 struct KernelTestAccess;
 
-template <typename Cfg> class CommsTask : public IAsyncTask
+template <typename Cfg> class ScheduledCommsTask : public IScheduledTask
 {
   public:
     using CommandStruct = typename Cfg::Command;
+
+    /**
+     * @brief The task's activation period in microseconds.
+     * @return Period from `CfgCommsBudgetUs<Cfg>`.
+     */
+    SputterMicros periodUs() const override { return CfgCommsBudgetUs<Cfg>::value; }
 
     /**
      * @brief Initialize the stream reader and reset the command parser.
@@ -87,7 +94,7 @@ template <typename Cfg> class CommsTask : public IAsyncTask
      * @param stream: Bidirectional byte stream (USB CDC, UART, etc.).
      * @param commandQueue: Producer-side queue into which parsed commands are pushed.
      */
-    CommsTask(KernelConstructTag /*tag*/, IStream *stream, ICommandProducer<Cfg> *commandQueue)
+    ScheduledCommsTask(KernelConstructTag /*tag*/, IStream *stream, ICommandProducer<Cfg> *commandQueue)
         : m_commandQueue(commandQueue), m_cli(stream)
     {
         // Intentionally Empty
@@ -152,4 +159,4 @@ template <typename Cfg> class CommsTask : public IAsyncTask
 } // namespace Kernel
 } // namespace SputterOS
 
-#endif // SPUTTEROS_KERNEL_COMMSTASK_H
+#endif // SPUTTEROS_KERNEL_SCHEDULEDCOMMSTASK_H

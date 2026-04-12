@@ -10,3 +10,14 @@ coverage_report.txt
 # Generated test result files
 FormalTestResults.md
 FormalTestResults.txt
+
+# Github / Copilot Files
+.github/copilot-instructions.md
+.github/prompts/
+.github/instructions/
+.github/agents/
+.github/hooks/
+.github/skills/
+
+# Dedicated user instruction space (Put your local working files, agent configs etc here)
+userDocs/

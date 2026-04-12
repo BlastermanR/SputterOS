@@ -1,12 +1,26 @@
 # SputterOS
 
-A hardware-agnostic C++17 static library for building deterministic, safe nanofab control systems (~90 KiB).
+A **deterministic, hardware-agnostic C++17 control framework** for high-speed, safety-critical nanofabrication and vacuum systems. Native Asymmetric Multiprocessing (AMP), lock-free polling architecture, and compile-time safety verification eliminate RTOS jitter and concurrency bugs, no bare-metal expertise required. The library is roughly (~70 KiB).
 
 ## What is SputterOS?
 
-SputterOS is a reusable control platform for nanofab systems - sputtering, deposition, etching, analysis instruments, and any vacuum-based equipment. It provides the core infrastructure: a deterministic control loop, multi-tier safety interlocks, command routing, task scheduling, and process execution interfaces.
+SputterOS is a **reusable control platform for nanofab systems**; sputtering, deposition, etching, analysis instruments, and any vacuum-based equipment. It provides deterministic control loop infrastructure, multi-tier safety interlocks, command routing, and process execution interfaces.
 
-**SputterOS touches no hardware directly.** You supply the drivers, process logic, and OS bindings; SputterOS orchestrates them and enforces safety through pure C++ interfaces.
+**SputterOS touches no hardware directly.** You supply HAL drivers and process logic; SputterOS orchestrates them and enforces safety through pure C++ interfaces. Because the entire framework is decoupled from hardware, you can validate your entire control system end-to-end on a desktop PC—no embedded hardware required during development.
+
+### Why SputterOS?
+
+**Microsecond Precision Without RTOS Jitter**  
+Traditional RTOS schedulers introduce unpredictable context-switching overhead. SputterOS uses AMP (Asymmetric Multiprocessing) with a lock-free, polling-based architecture to deliver deterministic, tightly-bounded control loops, perfect for precision tuning and real-time process control.
+
+**Compile-Time Safety, Not Runtime Surprises**  
+SputterOS's `SystemBuilder<Cfg>` pattern shifts dangerous concurrency and configuration mistakes to compile time. Wrong core assignment? Type mismatch? Configuration constraint violation? The compiler catches it. No cryptic deadlocks at 3 AM.
+
+**Zero Bare-Metal Firmware Skills Needed**  
+Lab researchers and control engineers can write safe, microsecond-class control loops in standard C++17 without mastering bare-metal ISR handling, low-level atomics, and hardware-specific quirks. The framework handles the hard parts.
+
+**Zero Hardware Complexity**  
+Develop your entire control system on a standard PC without hardware dependencies. No embedded debugging nightmares, no hardware bring-up delays. Focus purely on process logic and safety rules; SputterOS handles the deterministic scheduling and multi-core coordination. Real hardware integration becomes a trivial HAL layer swap.
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -51,11 +65,13 @@ SputterOS emerged from the need to control an RF sputtering magnetron on a custo
 
 ## Key Properties
 
-- **Reusable** across hardware platforms (RP2350, ESP32, STM32, custom boards)
-- **Host-testable** on a desktop PC — host-native unit and system tests with zero hardware dependencies
-- **Deterministic** configurable control rate (default 100 Hz) with bounded safety response
-- **Multi-core ready** lock-free SPSC queue with acquire/release atomics
-- **Zero heap allocation** all kernel storage is statically sized from your `Cfg`
+- **Deterministic by Architecture** — Configurable control rate (default 100 Hz), lock-free polling, zero RTOS scheduler jitter, bounded safety response times
+- **Asymmetric Multiprocessing (AMP) Native** — Automatic per-core task assignment, lock-free SPSC queue, acquire/release atomics, no global locks
+- **Compile-Time Configuration Safety** — `SystemBuilder<Cfg>` validates topology, task types, and queue capacities at compile time; configuration errors become type errors
+- **Reusable** across hardware platforms (RP2350, ESP32, STM32, ARM Cortex-M, custom boards)
+- **Host-Testable** on a desktop PC — full unit and system test coverage with zero hardware dependencies
+- **Zero-Heap Kernel** — all kernel storage is statically sized; no dynamic allocation in critical path
+- **Safety-Ready** — multi-tier interlocks, microsecond-precision monitoring, deterministic abort handling
 
 ## Architecture Overview
 
@@ -83,11 +99,11 @@ Three kernel tasks are auto-assigned by `build()` based on task type:
 
 | Task | Type | Responsibility |
 |---|---|---|
-| `ControlTask<Cfg>` | `ICriticalTask` | Safety monitors → command drain → `IUserApplication::tick()` |
-| `CommsTask<Cfg>` | `IAsyncTask` | Serial byte ingestion → `CommandParser` → queue push |
-| `DiagnosticsTask` | `IAsyncTask` | Watchdog kick, per-task `TaskTimer` budget enforcement, memory profiling |
+| `ScheduledControlTask<Cfg>` | `IScheduledTask` | Safety monitors → command drain → `IUserApplication::tick()` |
+| `ScheduledCommsTask<Cfg>` | `IScheduledTask` | Serial byte ingestion → `CommandParser` → queue push |
+| `BackgroundDiagnosticsTask` | `IBackgroundTask` | Watchdog kick, per-task `TaskTimer` budget enforcement, memory profiling |
 
-In multi-core configurations, `SystemBuilder` automatically assigns `ICriticalTask` to Core 0 and `IAsyncTask` to Core 1. In single-core mode, all tasks run on Core 0.
+In multi-core configurations, `SystemBuilder` automatically assigns `ScheduledControlTask` to Core 0 and `ScheduledCommsTask` to Core 1. In single-core mode, all tasks run on Core 0.
 
 The user provides:
 
@@ -178,8 +194,8 @@ See the [Implementation Guide](docs/ImplementationGuide.md) for the full walkthr
 
 - **Testing**
   - Host-native GoogleTest/CTest coverage for library logic, kernel tasks, OSAL utilities, and end-to-end pipelines
-  - Dedicated system tests for lifecycle, interlocks, diagnostics, timer rollover, and dual-core flows
-  - Example projects that build and run as standalone smoke tests
+  - Dedicated system tests for lifecycle, interlocks, diagnostics, timer rollover, multi-rate scheduling, IO_PENDING coordination, and dual-core flows
+  - Example projects that build and run as standalone smoke tests (multi-rate, IO_PENDING, lifecycle, heartbeat, pingpong)
 
 ## Documentation
 
@@ -188,6 +204,7 @@ See the [Implementation Guide](docs/ImplementationGuide.md) for the full walkthr
 - [Example Project Structure](docs/ExampleProjectStructure.md) — reference directory layout
 - [ISR Methodology](docs/ISRMethodology.md) — interrupt-driven hardware within polling-based control
 - [Multi-Core Implementation](docs/MultiCoreImplementation.md) — distributing SputterOS across CPU cores
+- [Scheduling Design](docs/SchedulingDesign.md) — Dispatch algorithm, task hierarchy, rate-limiting, IO_PENDING, background tasks
 - [Testing Guide](docs/TestingGuide.md) — build verification, unit tests, and formal test reports
 - [Comment Style](docs/CommentStyle.md) — source code comment conventions
 
@@ -220,8 +237,8 @@ make coverage       # Generate llvm-cov coverage report
 | Suite | Purpose | Count |
 |---|---|---|
 | **Unit Tests** | Core logic, queues, kernel tasks, HAL/OSAL interfaces | See latest formal report |
-| **System Tests** | End-to-end integration for lifecycle, interlocks, diagnostics, and dual-core flows | See latest formal report |
-| **Example Projects** | Standalone executable smoke tests in `exampleProjects/` | 2 executables |
+| **System Tests** | End-to-end integration for lifecycle, interlocks, diagnostics, scheduling, and dual-core flows | See latest formal report |
+| **Example Projects** | Standalone executable smoke tests in `exampleProjects/` | 5 executables |
 
 All tests run on your host PC — **no embedded hardware or RTOS required**.
 

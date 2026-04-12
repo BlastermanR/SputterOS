@@ -173,3 +173,35 @@ TEST(ITaskDeviceTest, ValidateDependencies_Override_PassesWhenExceeded)
     task.addDevice(&d3);
     EXPECT_TRUE(task.validateDependencies());
 }
+
+// ===========================================================================
+// Scheduling type markers — base ITask defaults
+// ===========================================================================
+
+TEST(ITaskSchedulingTest, IsScheduled_DefaultReturnsFalse)
+{
+    ConcreteTask task;
+    EXPECT_FALSE(task.isScheduled());
+}
+
+TEST(ITaskSchedulingTest, IsBackground_DefaultReturnsFalse)
+{
+    ConcreteTask task;
+    EXPECT_FALSE(task.isBackground());
+}
+
+// ===========================================================================
+// onSuspend / onResume — base ITask defaults (no-ops, should not crash)
+// ===========================================================================
+
+TEST(ITaskSchedulingTest, OnSuspend_DefaultIsNoOp)
+{
+    ConcreteTask task;
+    task.onSuspend(); // must not crash
+}
+
+TEST(ITaskSchedulingTest, OnResume_DefaultIsNoOp)
+{
+    ConcreteTask task;
+    task.onResume(); // must not crash
+}

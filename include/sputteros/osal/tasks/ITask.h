@@ -26,10 +26,10 @@ class ISputterDevice; // forward declaration for device dependency tracking
  * `SystemBuilder::build()` calls this on every task before the system
  * starts and fails the build if any task returns false.
  *
- * ### Scheduler Abstraction (Phase 4)
- * The default `run()` uses a deterministic `while (true)` loop for
- * bare-metal targets (RP2350). When porting to an RTOS, override
- * `run()` or wrap it with `xTaskCreate` / equivalent.
+ * Subclasses `IScheduledTask` and `IBackgroundTask` provide the
+ * scheduling contract used by the Cruncher dispatcher. Override
+ * `onSuspend()` / `onResume()` for tasks that need to react to
+ * scheduler lifecycle transitions.
  *
  * @author Ryan Massie (rmassie)
  * @date 4/7/2026
@@ -91,16 +91,32 @@ class ITask
     }
 
     /**
-     * @brief Core affinity marker — true if this task must run on Core 0.
-     * @return false by default; overridden by `ICriticalTask`.
+     * @brief Scheduling type marker — true if this task is deadline-scheduled.
+     * @return false by default; overridden to true by `IScheduledTask`.
      */
-    virtual bool isCritical() const { return false; }
+    virtual bool isScheduled() const { return false; }
 
     /**
-     * @brief Core affinity marker — true if this task should run on Core 1.
-     * @return false by default; overridden by `IAsyncTask`.
+     * @brief Scheduling type marker — true if this task runs as background work.
+     * @return false by default; overridden to true by `IBackgroundTask`.
      */
-    virtual bool isAsync() const { return false; }
+    virtual bool isBackground() const { return false; }
+
+    /**
+     * @brief Called by the scheduler when this task is being suspended.
+     *
+     * Override to save state or release shared resources before the
+     * scheduler pauses this task. The default implementation is a no-op.
+     */
+    virtual void onSuspend() {}
+
+    /**
+     * @brief Called by the scheduler when this task is being resumed.
+     *
+     * Override to restore state or reacquire resources after the
+     * scheduler resumes this task. The default implementation is a no-op.
+     */
+    virtual void onResume() {}
 
     // -----------------------------------------------------------------
     // Device Dependency Registration

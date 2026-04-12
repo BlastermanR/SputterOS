@@ -200,6 +200,45 @@ TEST_F(TaskTimerTest, Reset_ClearsAllStatistics)
     EXPECT_EQ(m_timer.sampleCount(), 0u);
 }
 
+// ===========================================================================
+// overrunCount / deadlineMissCount
+// ===========================================================================
+
+TEST_F(TaskTimerTest, OverrunCounter_InitiallyZero) { EXPECT_EQ(m_timer.overrunCount(), 0u); }
+
+TEST_F(TaskTimerTest, OverrunCounter_IncrementsOnRecord)
+{
+    m_timer.recordOverrun();
+    EXPECT_EQ(m_timer.overrunCount(), 1u);
+
+    m_timer.recordOverrun();
+    m_timer.recordOverrun();
+    EXPECT_EQ(m_timer.overrunCount(), 3u);
+}
+
+TEST_F(TaskTimerTest, DeadlineMissCounter_InitiallyZero) { EXPECT_EQ(m_timer.deadlineMissCount(), 0u); }
+
+TEST_F(TaskTimerTest, DeadlineMissCounter_IncrementsOnRecord)
+{
+    m_timer.recordDeadlineMiss();
+    EXPECT_EQ(m_timer.deadlineMissCount(), 1u);
+
+    m_timer.recordDeadlineMiss();
+    EXPECT_EQ(m_timer.deadlineMissCount(), 2u);
+}
+
+TEST_F(TaskTimerTest, Reset_ClearsOverrunAndDeadlineMissCounters)
+{
+    m_timer.recordOverrun();
+    m_timer.recordOverrun();
+    m_timer.recordDeadlineMiss();
+
+    m_timer.reset();
+
+    EXPECT_EQ(m_timer.overrunCount(), 0u);
+    EXPECT_EQ(m_timer.deadlineMissCount(), 0u);
+}
+
 TEST_F(TaskTimerTest, Reset_AllowsCleanReuseAfterReset)
 {
     // First session.

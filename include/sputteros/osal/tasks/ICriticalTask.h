@@ -1,36 +1,40 @@
 #ifndef SPUTTEROS_OSAL_ICRITICALTASK_H
 #define SPUTTEROS_OSAL_ICRITICALTASK_H
 
-#include "sputteros/osal/tasks/ITask.h"
-
 /**
  * @file ICriticalTask.h
- * @brief Interface for deterministic, Core 0 pinned kernel tasks.
+ * @brief TEMPORARY compatibility shim — will be removed after Plan E.
  *
- * Tasks that inherit `ICriticalTask` are guaranteed to be scheduled on
- * Core 0 in a multi-core configuration. `SystemBuilder` enforces this
- * constraint at build-time and the type trait `IsCriticalTask<T>` enables
- * compile-time `static_assert` checks.
+ * Bridges the old `ICriticalTask` API to the new `IScheduledTask`
+ * hierarchy so that downstream code (`ControlTask`, tests) continues
+ * to compile while the task hierarchy refactor is in progress.
  *
- * `ControlTask` is the canonical `ICriticalTask` — it runs the safety
- * evaluation and user-application loop at a fixed, deterministic rate.
+ * Provides a default `periodUs()` of 0 so concrete subclasses that
+ * have not yet declared their period can still be instantiated.
  *
- * @note In single-core configurations all tasks run on Core 0 regardless
- *       of their affinity marker.
+ * @warning Do NOT add new code that depends on `ICriticalTask`. Use
+ *          `IScheduledTask` directly in all new code.
  *
  * @author Ryan Massie (rmassie)
- * @date 4/8/2026
+ * @date 4/10/2026
  */
+
+#include "sputteros/osal/tasks/IScheduledTask.h"
+
 namespace SputterOS
 {
 
-class ICriticalTask : public ITask
+class ICriticalTask : public IScheduledTask
 {
   public:
+    /** @brief Virtual destructor. */
+    virtual ~ICriticalTask() = default;
+
     /**
-     * @brief Core affinity marker — always returns true for critical tasks.
+     * @brief Default period — temporary stub until Plan E assigns real periods.
+     * @return 0 (unconfigured).
      */
-    bool isCritical() const final { return true; }
+    SputterMicros periodUs() const override { return 0; }
 };
 
 } // namespace SputterOS

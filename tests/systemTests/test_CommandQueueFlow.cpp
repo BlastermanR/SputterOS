@@ -32,7 +32,7 @@ class CommandQueueFlow : public ::testing::Test
     {
         // Infrastructure-only mode — no kernel tasks. Just the queue.
         SystemBuilder<Cfg> builder(nullptr, nullptr, 0);
-        builder.core(0).addTask(&userTask);
+        builder.core(0).addScheduledTask(&userTask);
         ASSERT_TRUE(builder.build());
     }
 

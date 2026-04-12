@@ -1,9 +1,9 @@
 #ifndef SPUTTEROS_UNIT_MOCKS_KERNELTESTACCESS_H
 #define SPUTTEROS_UNIT_MOCKS_KERNELTESTACCESS_H
 
-#include "sputteros/kernel/CommsTask.h"
-#include "sputteros/kernel/ControlTask.h"
-#include "sputteros/kernel/DiagnosticsTask.h"
+#include "sputteros/kernel/BackgroundDiagnosticsTask.h"
+#include "sputteros/kernel/ScheduledCommsTask.h"
+#include "sputteros/kernel/ScheduledControlTask.h"
 #include "sputteros/kernel/System.h"
 
 /**
@@ -28,36 +28,63 @@ namespace Kernel
 struct KernelTestAccess
 {
     /**
-     * @brief Construct a CommsTask with the given dependencies.
-     */
-    template <typename Cfg> static CommsTask<Cfg> makeCommsTask(IStream *stream, ICommandProducer<Cfg> *commandQueue)
-    {
-        return CommsTask<Cfg>(KernelConstructTag{}, stream, commandQueue);
-    }
-
-    /**
-     * @brief Construct a ControlTask with the given dependencies.
+     * @brief Construct a ScheduledCommsTask with the given dependencies.
      */
     template <typename Cfg>
-    static ControlTask<Cfg> makeControlTask(ICommandConsumer<Cfg> *commandQueue, IUserApplication<Cfg> *app,
-                                            ISafetyMonitor **monitors, std::size_t monitorCount)
+    static ScheduledCommsTask<Cfg> makeCommsTask(IStream *stream, ICommandProducer<Cfg> *commandQueue)
     {
-        return ControlTask<Cfg>(KernelConstructTag{}, commandQueue, app, monitors, monitorCount);
+        return ScheduledCommsTask<Cfg>(KernelConstructTag{}, stream, commandQueue);
     }
 
     /**
-     * @brief Construct a DiagnosticsTask with the given dependencies.
+     * @brief Construct a ScheduledControlTask with the given dependencies.
      */
-    static DiagnosticsTask makeDiagnosticsTask(ErrorLogger &logger, MemoryProfiler &memProfiler,
-                                               DiagnosticsTask::WatchdogKickFn watchdogKick)
+    template <typename Cfg>
+    static ScheduledControlTask<Cfg> makeControlTask(ICommandConsumer<Cfg> *commandQueue, IUserApplication<Cfg> *app,
+                                                     ISafetyMonitor **monitors, std::size_t monitorCount)
     {
-        return DiagnosticsTask(KernelConstructTag{}, logger, memProfiler, watchdogKick);
+        return ScheduledControlTask<Cfg>(KernelConstructTag{}, commandQueue, app, monitors, monitorCount);
+    }
+
+    /**
+     * @brief Construct a BackgroundDiagnosticsTask with the given dependencies.
+     */
+    static BackgroundDiagnosticsTask makeDiagnosticsTask(ErrorLogger &logger, MemoryProfiler &memProfiler,
+                                                         BackgroundDiagnosticsTask::WatchdogKickFn watchdogKick)
+    {
+        return BackgroundDiagnosticsTask(KernelConstructTag{}, logger, memProfiler, watchdogKick);
     }
 
     /**
      * @brief Reset the System singleton for test re-use between fixtures.
      */
     template <typename Cfg> static void resetSystem() { System<Cfg>::reset(); }
+
+    /**
+     * @brief Reset only the background task storage.
+     */
+    template <typename Cfg> static void resetBackgroundTasks()
+    {
+        System<Cfg>::s_backgroundTaskCount = 0;
+        for (auto &t : System<Cfg>::s_backgroundTasks)
+            t = nullptr;
+    }
+
+    /**
+     * @brief Reset only the kernel state to UNCONFIGURED for test isolation.
+     */
+    template <typename Cfg> static void resetKernelState()
+    {
+        System<Cfg>::s_kernelState = Kernel::KernelState::UNCONFIGURED;
+    }
+
+    /**
+     * @brief Proxy for System<Cfg>::transitionTo() — test access to private method.
+     */
+    template <typename Cfg> static bool transitionTo(Kernel::KernelState target)
+    {
+        return System<Cfg>::transitionTo(target);
+    }
 };
 
 } // namespace Kernel

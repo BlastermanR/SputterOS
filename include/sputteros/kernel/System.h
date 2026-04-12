@@ -44,12 +44,14 @@
  */
 
 #include "sputteros/ConfigTraits.h"
-#include "sputteros/kernel/CommsTask.h"
-#include "sputteros/kernel/ControlTask.h"
-#include "sputteros/kernel/DiagnosticsTask.h"
+#include "sputteros/kernel/BackgroundDiagnosticsTask.h"
+#include "sputteros/kernel/KernelState.h"
+#include "sputteros/kernel/ScheduledCommsTask.h"
+#include "sputteros/kernel/ScheduledControlTask.h"
 #include "sputteros/osal/sync/LockFreeQueue.h"
 #include "sputteros/osal/sync/MultiCoreSync.h"
 #include "sputteros/osal/sync/WatchdogSync.h"
+#include "sputteros/osal/tasks/IBackgroundTask.h"
 #include "sputteros/osal/tasks/ITask.h"
 #include "sputteros/utils/MemoryProfiler.h"
 #include "sputteros/utils/logging/ErrorLogger.h"
@@ -199,6 +201,11 @@ template <typename Cfg> class System
         assert(s_built && "Call SystemBuilder::build() before System::init()");
         if (coreId >= kCoreCount)
             return;
+
+        // Transition to INITIALIZING on first core to call init()
+        if (s_kernelState == Kernel::KernelState::CONFIGURED)
+            transitionTo(Kernel::KernelState::INITIALIZING);
+
         for (std::size_t t = 0; t < s_cores[coreId].taskCount; ++t)
         {
             ITask *tsk = s_cores[coreId].tasks[t];
@@ -207,6 +214,10 @@ template <typename Cfg> class System
                 tsk->init();
             }
         }
+
+        // Transition to RUNNING after tasks initialized
+        if (s_kernelState == Kernel::KernelState::INITIALIZING)
+            transitionTo(Kernel::KernelState::RUNNING);
     }
 
     /**
@@ -301,6 +312,18 @@ template <typename Cfg> class System
      */
     static MemoryProfiler &memProfiler() { return s_memProfiler; }
 
+    /**
+     * @brief Access the registered background tasks.
+     * @return Pointer to the background task array.
+     */
+    static IBackgroundTask *const *backgroundTasks() { return s_backgroundTasks; }
+
+    /**
+     * @brief Number of registered background tasks.
+     * @return Count of background tasks.
+     */
+    static std::size_t backgroundTaskCount() { return s_backgroundTaskCount; }
+
     // =====================================================================
     // Queries
     // =====================================================================
@@ -310,6 +333,12 @@ template <typename Cfg> class System
      * @return true after a successful `build()` call.
      */
     static bool isBuilt() { return s_built; }
+
+    /**
+     * @brief Read-only accessor for the current kernel lifecycle state.
+     * @return Current `KernelState` value.
+     */
+    static Kernel::KernelState kernelState() { return s_kernelState; }
 
     /**
      * @brief Number of tasks registered on a core.
@@ -350,7 +379,10 @@ template <typename Cfg> class System
         s_diagsTask.reset();
         s_errorLogger.clear();
         s_commandQueue.clear();
-        s_allTaskCount = 0;
+        s_allTaskCount        = 0;
+        s_backgroundTaskCount = 0;
+        for (auto &t : s_backgroundTasks)
+            t = nullptr;
         for (std::size_t c = 0; c < kCoreCount; ++c)
         {
             s_cores[c]    = CoreData{};
@@ -363,7 +395,8 @@ template <typename Cfg> class System
         // Reinitialize sync primitives (atomics are not assignable)
         new (&s_watchdog) WatchdogSync<kCoreCount>{};
         new (&s_sync) SyncType{};
-        s_timer = SystemTimer{};
+        s_timer       = SystemTimer{};
+        s_kernelState = Kernel::KernelState::UNCONFIGURED;
     }
 
     // =====================================================================
@@ -383,9 +416,16 @@ template <typename Cfg> class System
     // Kernel Tasks (emplaced by SystemBuilder::build())
     // =====================================================================
 
-    inline static std::optional<Kernel::ControlTask<Cfg>> s_controlTask{};
-    inline static std::optional<Kernel::CommsTask<Cfg>>   s_commsTask{};
-    inline static std::optional<Kernel::DiagnosticsTask>  s_diagsTask{};
+    inline static std::optional<Kernel::ScheduledControlTask<Cfg>> s_controlTask{};
+    inline static std::optional<Kernel::ScheduledCommsTask<Cfg>>   s_commsTask{};
+    inline static std::optional<Kernel::BackgroundDiagnosticsTask> s_diagsTask{};
+
+    // =====================================================================
+    // Background Task Ring
+    // =====================================================================
+
+    inline static IBackgroundTask *s_backgroundTasks[CfgMaxBackgroundTasks<Cfg>::value] = {};
+    inline static std::size_t      s_backgroundTaskCount{0};
 
     // =====================================================================
     // Per-Core Task Lists
@@ -399,8 +439,70 @@ template <typename Cfg> class System
     // State
     // =====================================================================
 
-    inline static bool          s_built{false};
-    inline static SputterMicros s_lastTime[kCoreCount]{};
+    inline static bool                s_built{false};
+    inline static SputterMicros       s_lastTime[kCoreCount]{};
+    inline static Kernel::KernelState s_kernelState{Kernel::KernelState::UNCONFIGURED};
+
+    // =====================================================================
+    // Kernel State Machine
+    // =====================================================================
+
+    /**
+     * @brief Attempt a kernel lifecycle state transition.
+     *
+     * Validates the transition against the allowed transition table
+     * (see docs/SchedulingDesign.md §7). Invalid
+     * transitions are logged to `ErrorLogger` and rejected.
+     *
+     * @param target Desired next state.
+     * @return true if the transition was valid and applied.
+     */
+    static bool transitionTo(Kernel::KernelState target)
+    {
+        using KS   = Kernel::KernelState;
+        bool valid = false;
+        switch (s_kernelState)
+        {
+        case KS::UNCONFIGURED:
+            valid = (target == KS::CONFIGURED);
+            break;
+        case KS::CONFIGURED:
+            valid = (target == KS::INITIALIZING);
+            break;
+        case KS::INITIALIZING:
+            valid = (target == KS::RUNNING);
+            break;
+        case KS::RUNNING:
+            valid = (target == KS::SUSPENDING || target == KS::ABORTING || target == KS::SHUTTING_DOWN);
+            break;
+        case KS::SUSPENDING:
+            valid = (target == KS::SUSPENDED);
+            break;
+        case KS::SUSPENDED:
+            valid = (target == KS::RUNNING || target == KS::SHUTTING_DOWN);
+            break;
+        case KS::ABORTING:
+            valid = (target == KS::ABORTED);
+            break;
+        case KS::ABORTED:
+            valid = (target == KS::RUNNING || target == KS::SHUTTING_DOWN);
+            break;
+        case KS::SHUTTING_DOWN:
+            valid = (target == KS::SHUTDOWN);
+            break;
+        case KS::SHUTDOWN:
+            valid = false;
+            break;
+        }
+        if (valid)
+        {
+            s_kernelState = target;
+            return true;
+        }
+        s_errorLogger.log(ErrorLogger::ErrorCode::INVALID_STATE, SputterMicros(0),
+                          static_cast<float>(static_cast<uint8_t>(target)));
+        return false;
+    }
 };
 
 } // namespace SputterOS

@@ -66,8 +66,8 @@ TEST_F(ErrorLoggingPipeline, ErrorLoggerFIFOOrdering)
     auto &logger = System<Cfg>::errorLogger();
 
     logger.log(ErrorLogger::ErrorCode::STATE_TRANSITION, SputterMicros(100), 1.0f);
-    logger.log(ErrorLogger::ErrorCode::INTERLOCK_TRIP,   SputterMicros(200), 2.0f);
-    logger.log(ErrorLogger::ErrorCode::SOFT_ABORT,       SputterMicros(300), 3.0f);
+    logger.log(ErrorLogger::ErrorCode::INTERLOCK_TRIP, SputterMicros(200), 2.0f);
+    logger.log(ErrorLogger::ErrorCode::SOFT_ABORT, SputterMicros(300), 3.0f);
 
     ASSERT_EQ(logger.count(), 3u);
 
@@ -97,15 +97,14 @@ TEST_F(ErrorLoggingPipeline, ErrorLoggerCircularOverwrite)
 
     for (std::size_t i = 0; i < kOverflow; ++i)
     {
-        logger.log(ErrorLogger::ErrorCode::SENSOR_ERROR,
-                   SputterMicros(static_cast<uint64_t>(i)),
+        logger.log(ErrorLogger::ErrorCode::SENSOR_ERROR, SputterMicros(static_cast<uint64_t>(i)),
                    static_cast<float>(i));
     }
 
     // Drain all readable entries and collect timestamps.
-    bool             foundTimestamp0  = false;
-    bool             foundTimestamp32 = false;
-    std::size_t      readCount        = 0;
+    bool               foundTimestamp0  = false;
+    bool               foundTimestamp32 = false;
+    std::size_t        readCount        = 0;
     ErrorLogger::Entry e{};
     while (logger.read(e))
     {
@@ -145,22 +144,16 @@ TEST_F(ErrorLoggingPipeline, TelemetryLoggerLogAndDrain)
 
     EXPECT_EQ(telemetry.count(), 0u);
 
-    telemetry.log(TelemetryLogger::TaskID::CONTROL,
-                  "Deposition started",
-                  TelemetryLogger::Verbosity::STATUS,
+    telemetry.log(TelemetryLogger::TaskID::CONTROL, "Deposition started", TelemetryLogger::Verbosity::STATUS,
                   SputterMicros(1000));
 
-    telemetry.log(TelemetryLogger::TaskID::DIAGNOSTICS,
-                  "Watchdog kicked",
-                  TelemetryLogger::Verbosity::INFO,
+    telemetry.log(TelemetryLogger::TaskID::DIAGNOSTICS, "Watchdog kicked", TelemetryLogger::Verbosity::INFO,
                   SputterMicros(2000));
 
     EXPECT_EQ(telemetry.count(), 2u);
 
     // Drain to a null sink — just verify it completes without crashing.
-    EXPECT_NO_FATAL_FAILURE({
-        telemetry.drain([](const uint8_t *, std::size_t, void *) {}, nullptr);
-    });
+    EXPECT_NO_FATAL_FAILURE({ telemetry.drain([](const uint8_t *, std::size_t, void *) {}, nullptr); });
 
     EXPECT_EQ(telemetry.count(), 0u);
 }

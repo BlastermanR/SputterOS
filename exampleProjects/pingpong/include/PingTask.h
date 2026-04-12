@@ -31,7 +31,7 @@
 #include "SharedCounter.h"
 
 #include "sputteros/osal/SputterTime.h"
-#include "sputteros/osal/tasks/ITask.h"
+#include "sputteros/osal/tasks/IScheduledTask.h"
 #include "sputteros/utils/logging/LightweightStringBuilder.h"
 #include "sputteros/utils/logging/TelemetryLogger.h"
 
@@ -48,20 +48,20 @@ namespace PingPong
  * the shared counter, logs the result, then either releases the token
  * to PongTask or terminates the run.
  */
-class PingTask : public SputterOS::ITask
+class PingTask : public SputterOS::IScheduledTask
 {
   public:
     /** @brief Minimum interval between successive ping events (microseconds). */
     static constexpr SputterOS::SputterMicros kPingIntervalUs = 300'000; // 300 ms
 
+    /** @brief The task's activation period in microseconds. */
+    SputterOS::SputterMicros periodUs() const override { return kPingIntervalUs; }
+
     /**
      * @brief Construct a PingTask that writes to the given TelemetryLogger.
      * @param telemetry: Core 0 logger — lifetime must exceed this task.
      */
-    explicit PingTask(SputterOS::TelemetryLogger &telemetry)
-        : m_telemetry(telemetry), m_lastPing{0}, m_pingCount(0)
-    {
-    }
+    explicit PingTask(SputterOS::TelemetryLogger &telemetry) : m_telemetry(telemetry), m_lastPing{0}, m_pingCount(0) {}
 
     /**
      * @brief Reset the interval timer and ping counter.

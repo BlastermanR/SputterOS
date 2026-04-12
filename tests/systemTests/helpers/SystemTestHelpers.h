@@ -15,7 +15,7 @@
 #include "sputteros/logic/IFaultResponse.h"
 #include "sputteros/logic/IInterlockCondition.h"
 #include "sputteros/osal/SputterTime.h"
-#include "sputteros/osal/tasks/ITask.h"
+#include "sputteros/osal/tasks/IScheduledTask.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -30,7 +30,7 @@ namespace SystemTests
 // InstrumentedTask — records init/tick calls for verification
 // =========================================================================
 
-class InstrumentedTask : public ITask
+class InstrumentedTask : public IScheduledTask
 {
   public:
     void init() override { ++initCount; }
@@ -40,6 +40,8 @@ class InstrumentedTask : public ITask
         ++tickCount;
         lastTickTime = systemTimeMicros;
     }
+
+    SputterMicros periodUs() const override { return 10000; }
 
     uint32_t      initCount    = 0;
     uint32_t      tickCount    = 0;

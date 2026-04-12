@@ -70,8 +70,7 @@ TEST_F(CommandDeliveryPipeline, SingleCommandFieldsCorrect)
     System<Cfg>::tick(0, SputterMicros(2000));
 
     ASSERT_EQ(app.commandCount, 1u);
-    EXPECT_EQ(static_cast<uint8_t>(app.commands[0].id),
-              static_cast<uint8_t>(Cfg::CmdID::SET_FLOW));
+    EXPECT_EQ(static_cast<uint8_t>(app.commands[0].id), static_cast<uint8_t>(Cfg::CmdID::SET_FLOW));
     EXPECT_EQ(app.commands[0].targetDevice, 2u);
     EXPECT_FLOAT_EQ(app.commands[0].value, 50.0f);
 }
