@@ -2,9 +2,11 @@
 #define SPUTTEROS_KERNEL_BACKGROUNDDIAGNOSTICSTASK_H
 
 #include "sputteros/kernel/KernelConstructTag.h"
+#include "sputteros/kernel/SchedulerHealthMetrics.h"
 #include "sputteros/kernel/TaskTimer.h"
 #include "sputteros/osal/tasks/IBackgroundTask.h"
 #include "sputteros/utils/MemoryProfiler.h"
+#include "sputteros/utils/QueueDepthMonitor.h"
 #include "sputteros/utils/logging/ErrorLogger.h"
 #include <cstddef>
 #include <cstdint>
@@ -89,6 +91,18 @@ class BackgroundDiagnosticsTask : public IBackgroundTask
     void setMonitoredTasks(ITask *const *tasks, std::size_t count);
 
     /**
+     * @brief Set the queue depth monitor to sample each tick.
+     * @param monitor: Pointer to the kernel-owned QueueDepthMonitor.
+     */
+    void setQueueMonitor(QueueDepthMonitor *monitor) { m_queueMonitor = monitor; }
+
+    /**
+     * @brief Set the scheduler health metrics to update each tick.
+     * @param metrics: Pointer to the kernel-owned SchedulerHealthMetrics.
+     */
+    void setSchedulerHealth(SchedulerHealthMetrics *metrics) { m_schedulerHealth = metrics; }
+
+    /**
      * @brief PassKey constructor — only SystemBuilder and KernelTestAccess may instantiate.
      *
      * @param tag: Opaque access token (see KernelConstructTag.h).
@@ -136,6 +150,8 @@ class BackgroundDiagnosticsTask : public IBackgroundTask
      */
     static constexpr uint32_t kMemCheckInterval = 100;
     uint32_t                  m_tickCount; /**< @brief Incremented each tick for sub-rate scheduling. */
+    QueueDepthMonitor        *m_queueMonitor{nullptr}; /**< @brief Optional queue depth sampler. */
+    SchedulerHealthMetrics    *m_schedulerHealth{nullptr}; /**< @brief Optional scheduler health aggregator. */
 };
 
 } // namespace Kernel

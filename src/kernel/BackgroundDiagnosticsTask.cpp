@@ -64,6 +64,22 @@ void BackgroundDiagnosticsTask::tick(SputterMicros /*systemTimeMicros*/)
 
     m_memProfiler.update();
 
+    // Aggregate overrun/deadline-miss counts from all monitored tasks
+    if (m_schedulerHealth)
+    {
+        uint32_t totalOverruns = 0;
+        uint32_t totalMisses   = 0;
+        for (std::size_t i = 0; i < m_monitoredCount; ++i)
+        {
+            if (m_monitoredTasks[i])
+            {
+                totalOverruns += m_monitoredTasks[i]->timer().overrunCount();
+                totalMisses   += m_monitoredTasks[i]->timer().deadlineMissCount();
+            }
+        }
+        m_schedulerHealth->setAggregates(totalOverruns, totalMisses);
+    }
+
     ++m_tickCount;
     if (m_tickCount >= kMemCheckInterval)
     {

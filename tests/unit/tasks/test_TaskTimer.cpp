@@ -12,6 +12,7 @@
 
 #include "sputteros/kernel/TaskTimer.h"
 #include <gtest/gtest.h>
+#include <limits>
 
 using namespace SputterOS;
 using namespace SputterOS::Kernel;
@@ -274,4 +275,235 @@ TEST_F(TaskTimerTest, NoClockSource_DurationIsZero)
 
     EXPECT_EQ(unclockedTimer.lastDuration(), 0u);
     EXPECT_EQ(unclockedTimer.sampleCount(), 1u);
+}
+
+// ===========================================================================
+// minDuration tracking
+// ===========================================================================
+
+TEST_F(TaskTimerTest, MinDuration_InitiallyMaxAfterReset)
+{
+    // After reset, minDuration should be sentinel max value
+    EXPECT_EQ(m_timer.minDuration(), std::numeric_limits<SputterMicros>::max());
+}
+
+TEST_F(TaskTimerTest, MinDuration_TracksSmallest)
+{
+    // First cycle: 300 µs
+    s_timerClock = 1000;
+    m_timer.start();
+    s_timerClock = 1300;
+    m_timer.stop();
+    EXPECT_EQ(m_timer.minDuration(), 300u);
+
+    // Second cycle: 100 µs (new min)
+    s_timerClock = 2000;
+    m_timer.start();
+    s_timerClock = 2100;
+    m_timer.stop();
+    EXPECT_EQ(m_timer.minDuration(), 100u);
+
+    // Third cycle: 500 µs (min stays at 100)
+    s_timerClock = 3000;
+    m_timer.start();
+    s_timerClock = 3500;
+    m_timer.stop();
+    EXPECT_EQ(m_timer.minDuration(), 100u);
+}
+
+TEST_F(TaskTimerTest, MinDuration_ResetClearsTracking)
+{
+    s_timerClock = 0;
+    m_timer.start();
+    s_timerClock = 50;
+    m_timer.stop();
+    EXPECT_EQ(m_timer.minDuration(), 50u);
+
+    m_timer.reset();
+    EXPECT_EQ(m_timer.minDuration(), std::numeric_limits<SputterMicros>::max());
+}
+
+// ===========================================================================
+// Histogram tracking
+// ===========================================================================
+
+TEST_F(TaskTimerTest, Histogram_InitiallyAllZero)
+{
+    const uint32_t *hist = m_timer.histogram();
+    for (std::size_t i = 0; i < TaskTimer::kHistogramBuckets; ++i)
+    {
+        EXPECT_EQ(hist[i], 0u) << "Bucket " << i << " should be zero after reset";
+    }
+}
+
+TEST_F(TaskTimerTest, Histogram_SingleSample_CorrectBucket)
+{
+    // 200 µs → bucket 0 (range [0, 500))
+    s_timerClock = 0;
+    m_timer.start();
+    s_timerClock = 200;
+    m_timer.stop();
+
+    const uint32_t *hist = m_timer.histogram();
+    EXPECT_EQ(hist[0], 1u);
+    for (std::size_t i = 1; i < TaskTimer::kHistogramBuckets; ++i)
+    {
+        EXPECT_EQ(hist[i], 0u);
+    }
+}
+
+TEST_F(TaskTimerTest, Histogram_MultipleBuckets)
+{
+    // 200 µs → bucket 0 [0, 500)
+    s_timerClock = 0;
+    m_timer.start();
+    s_timerClock = 200;
+    m_timer.stop();
+
+    // 700 µs → bucket 1 [500, 1000)
+    s_timerClock = 1000;
+    m_timer.start();
+    s_timerClock = 1700;
+    m_timer.stop();
+
+    // 1200 µs → bucket 2 [1000, 1500)
+    s_timerClock = 2000;
+    m_timer.start();
+    s_timerClock = 3200;
+    m_timer.stop();
+
+    const uint32_t *hist = m_timer.histogram();
+    EXPECT_EQ(hist[0], 1u);
+    EXPECT_EQ(hist[1], 1u);
+    EXPECT_EQ(hist[2], 1u);
+}
+
+TEST_F(TaskTimerTest, Histogram_OverflowClampedToLastBucket)
+{
+    // Very large duration: 100000 µs → should clamp to last bucket
+    s_timerClock = 0;
+    m_timer.start();
+    s_timerClock = 100000;
+    m_timer.stop();
+
+    const uint32_t *hist = m_timer.histogram();
+    EXPECT_EQ(hist[TaskTimer::kHistogramBuckets - 1], 1u);
+    for (std::size_t i = 0; i < TaskTimer::kHistogramBuckets - 1; ++i)
+    {
+        EXPECT_EQ(hist[i], 0u);
+    }
+}
+
+TEST_F(TaskTimerTest, Histogram_BucketBoundary)
+{
+    // Exactly at bucket boundary: 500 µs → bucket 1 [500, 1000)
+    s_timerClock = 0;
+    m_timer.start();
+    s_timerClock = 500;
+    m_timer.stop();
+
+    const uint32_t *hist = m_timer.histogram();
+    EXPECT_EQ(hist[1], 1u);
+    EXPECT_EQ(hist[0], 0u);
+}
+
+TEST_F(TaskTimerTest, Histogram_ResetClearsAll)
+{
+    s_timerClock = 0;
+    m_timer.start();
+    s_timerClock = 200;
+    m_timer.stop();
+
+    s_timerClock = 1000;
+    m_timer.start();
+    s_timerClock = 1700;
+    m_timer.stop();
+
+    m_timer.reset();
+
+    const uint32_t *hist = m_timer.histogram();
+    for (std::size_t i = 0; i < TaskTimer::kHistogramBuckets; ++i)
+    {
+        EXPECT_EQ(hist[i], 0u);
+    }
+}
+
+TEST_F(TaskTimerTest, Histogram_Constants)
+{
+    EXPECT_EQ(TaskTimer::histogramBucketCount(), 8u);
+    EXPECT_EQ(TaskTimer::histogramBucketWidthUs(), 500u);
+}
+
+// ===========================================================================
+// percentileUs
+// ===========================================================================
+
+TEST_F(TaskTimerTest, Percentile_NoSamples_ReturnsZero) { EXPECT_EQ(m_timer.percentileUs(0.5f), 0u); }
+
+TEST_F(TaskTimerTest, Percentile_ZeroPercentile_ReturnsZero)
+{
+    s_timerClock = 0;
+    m_timer.start();
+    s_timerClock = 200;
+    m_timer.stop();
+
+    EXPECT_EQ(m_timer.percentileUs(0.0f), 0u);
+}
+
+TEST_F(TaskTimerTest, Percentile_FullPercentile_ReturnsMax)
+{
+    s_timerClock = 0;
+    m_timer.start();
+    s_timerClock = 200;
+    m_timer.stop();
+
+    EXPECT_EQ(m_timer.percentileUs(1.0f), 200u);
+}
+
+TEST_F(TaskTimerTest, Percentile_AllSamplesInOneBucket)
+{
+    // 10 samples, all in bucket 0 [0, 500)
+    for (int i = 0; i < 10; ++i)
+    {
+        s_timerClock = static_cast<uint64_t>(i) * 1000;
+        m_timer.start();
+        s_timerClock += 100;
+        m_timer.stop();
+    }
+
+    // p50 should be within bucket 0
+    SputterMicros p50 = m_timer.percentileUs(0.5f);
+    EXPECT_GE(p50, 0u);
+    EXPECT_LT(p50, 500u);
+}
+
+TEST_F(TaskTimerTest, Percentile_SpreadAcrossBuckets)
+{
+    // 5 samples in bucket 0 [0, 500): durations of 200 µs each
+    for (int i = 0; i < 5; ++i)
+    {
+        s_timerClock = static_cast<uint64_t>(i) * 2000;
+        m_timer.start();
+        s_timerClock += 200;
+        m_timer.stop();
+    }
+
+    // 5 samples in bucket 2 [1000, 1500): durations of 1200 µs each
+    for (int i = 0; i < 5; ++i)
+    {
+        s_timerClock = 20000 + static_cast<uint64_t>(i) * 3000;
+        m_timer.start();
+        s_timerClock += 1200;
+        m_timer.stop();
+    }
+
+    // p50 — 50th percentile is at the boundary between the two groups
+    SputterMicros p50 = m_timer.percentileUs(0.5f);
+    // First 5 samples in bucket 0, next 5 in bucket 2
+    // At p50 (rank 5), cumulative in bucket 0 = 5, so p50 should be at top of bucket 0
+    EXPECT_LE(p50, 500u);
+
+    // p90 — should be well into bucket 2
+    SputterMicros p90 = m_timer.percentileUs(0.9f);
+    EXPECT_GE(p90, 1000u);
 }
