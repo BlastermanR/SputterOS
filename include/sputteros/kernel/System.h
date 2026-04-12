@@ -44,16 +44,20 @@
  */
 
 #include "sputteros/ConfigTraits.h"
-#include "sputteros/kernel/BackgroundDiagnosticsTask.h"
 #include "sputteros/kernel/KernelState.h"
-#include "sputteros/kernel/ScheduledCommsTask.h"
-#include "sputteros/kernel/ScheduledControlTask.h"
+#include "sputteros/kernel/metrics/CoreUtilizationTracker.h"
+#include "sputteros/kernel/metrics/SchedulerHealthMetrics.h"
+#include "sputteros/kernel/tasks/BackgroundDiagnosticsTask.h"
+#include "sputteros/kernel/tasks/ScheduledCommsTask.h"
+#include "sputteros/kernel/tasks/ScheduledControlTask.h"
 #include "sputteros/osal/sync/LockFreeQueue.h"
 #include "sputteros/osal/sync/MultiCoreSync.h"
 #include "sputteros/osal/sync/WatchdogSync.h"
 #include "sputteros/osal/tasks/IBackgroundTask.h"
 #include "sputteros/osal/tasks/ITask.h"
 #include "sputteros/utils/MemoryProfiler.h"
+#include "sputteros/utils/PerformanceSnapshot.h"
+#include "sputteros/utils/QueueDepthMonitor.h"
 #include "sputteros/utils/logging/ErrorLogger.h"
 
 #include <cassert>
@@ -247,6 +251,9 @@ template <typename Cfg> class System
         }
         s_lastTime[coreId] = systemTimeMicros;
 
+        s_utilTracker[coreId].recordTickStart(systemTimeMicros);
+
+        SputterMicros busyAccum = 0;
         for (std::size_t t = 0; t < s_cores[coreId].taskCount; ++t)
         {
             ITask *tsk = s_cores[coreId].tasks[t];
@@ -255,7 +262,22 @@ template <typename Cfg> class System
                 tsk->timer().start();
                 tsk->tick(systemTimeMicros);
                 tsk->timer().stop();
+                busyAccum += tsk->timer().lastDuration();
             }
+        }
+
+        SputterMicros tickEndTime = s_timer.nowMicros();
+        s_utilTracker[coreId].recordTickEnd(tickEndTime, busyAccum);
+
+        // Record gap time (wall time - busy time) for scheduler health
+        SputterMicros wallTime = (tickEndTime >= systemTimeMicros) ? (tickEndTime - systemTimeMicros) : 0;
+        SputterMicros gapUs    = (wallTime >= busyAccum) ? (wallTime - busyAccum) : 0;
+        s_schedulerHealth.recordGap(gapUs);
+
+        // Sample queue depth once per tick (on core 0 to avoid double-counting)
+        if (coreId == 0)
+        {
+            s_queueMonitor.sample(s_commandQueue.size());
         }
     }
 
@@ -311,6 +333,106 @@ template <typename Cfg> class System
      * @return Reference to the embedded `MemoryProfiler`.
      */
     static MemoryProfiler &memProfiler() { return s_memProfiler; }
+
+    /**
+     * @brief Access the per-core utilization tracker.
+     * @param coreId: Zero-based core identifier.
+     * @return Reference to the tracker for the given core.
+     */
+    static Kernel::CoreUtilizationTracker &coreUtilization(std::size_t coreId)
+    {
+        assert(coreId < kCoreCount);
+        return s_utilTracker[coreId];
+    }
+
+    /**
+     * @brief Access the queue depth monitor.
+     * @return Reference to the queue depth monitor.
+     */
+    static QueueDepthMonitor &queueMonitor() { return s_queueMonitor; }
+
+    /**
+     * @brief Access the scheduler health metrics.
+     * @return Reference to the scheduler health aggregator.
+     */
+    static Kernel::SchedulerHealthMetrics &schedulerHealth() { return s_schedulerHealth; }
+
+    /**
+     * @brief Capture a point-in-time snapshot of all performance metrics.
+     *
+     * Aggregates per-core utilization, command queue depth, memory
+     * usage, scheduler health, and per-task timing with histograms
+     * into a single `PerformanceSnapshot` value.
+     *
+     * @warning The returned struct consumes ~1.2 KiB of stack (16-task,
+     *          4-core configuration). Call from a top-level or background
+     *          context, not from within a deeply nested control tick,
+     *          to avoid stack overflow on constrained targets (e.g. RP2040).
+     *
+     * @return Snapshot value copy — safe to read from any context.
+     */
+    static PerformanceSnapshot snapshot()
+    {
+        PerformanceSnapshot snap{};
+        snap.timestamp = s_timer.nowMicros();
+
+        // Core utilization
+        snap.coreCount = kCoreCount;
+        for (std::size_t c = 0; c < kCoreCount && c < kMaxSnapshotCores; ++c)
+        {
+            snap.coreUtilization[c] = s_utilTracker[c].getUtilization();
+        }
+
+        // Command queue
+        snap.queueDepth    = s_queueMonitor.lastDepth();
+        snap.queueMaxDepth = s_queueMonitor.maxDepth();
+        snap.queueAvgDepth = s_queueMonitor.averageDepth();
+
+        // Memory
+        snap.peakHeapUsed   = s_memProfiler.getPeakHeapUsedBytes();
+        snap.freeHeap       = MemoryProfiler::getFreeHeapBytes();
+        snap.stackHighWater = MemoryProfiler::getStackHighWaterMark();
+
+        // Scheduler health
+        snap.totalGapUs          = s_schedulerHealth.totalGapUs();
+        snap.maxGapUs            = s_schedulerHealth.maxGapUs();
+        snap.avgGapUs            = s_schedulerHealth.averageGapUs();
+        snap.schedulerTickCount  = s_schedulerHealth.tickCount();
+        snap.totalOverruns       = s_schedulerHealth.totalOverruns();
+        snap.totalDeadlineMisses = s_schedulerHealth.totalDeadlineMisses();
+
+        // Per-task details
+        std::size_t idx = 0;
+        for (std::size_t c = 0; c < kCoreCount && idx < kMaxSnapshotTasks; ++c)
+        {
+            for (std::size_t t = 0; t < s_cores[c].taskCount && idx < kMaxSnapshotTasks; ++t)
+            {
+                ITask *tsk = s_cores[c].tasks[t];
+                if (!tsk)
+                    continue;
+                TaskSnapshot &ts     = snap.tasks[idx];
+                ts.taskIndex         = t;
+                ts.coreId            = c;
+                const auto &tmr      = tsk->timer();
+                ts.lastUs            = tmr.lastDuration();
+                ts.minUs             = tmr.minDuration();
+                ts.maxUs             = tmr.maxDuration();
+                ts.avgUs             = tmr.getAverageDurationUs();
+                ts.samples           = tmr.sampleCount();
+                ts.overruns          = tmr.overrunCount();
+                ts.misses            = tmr.deadlineMissCount();
+                const uint32_t *hist = tmr.histogram();
+                for (std::size_t b = 0; b < Kernel::TaskTimer::kHistogramBuckets; ++b)
+                {
+                    ts.histogram[b] = hist[b];
+                }
+                ++idx;
+            }
+        }
+        snap.taskCount = idx;
+
+        return snap;
+    }
 
     /**
      * @brief Access the registered background tasks.
@@ -395,7 +517,13 @@ template <typename Cfg> class System
         // Reinitialize sync primitives (atomics are not assignable)
         new (&s_watchdog) WatchdogSync<kCoreCount>{};
         new (&s_sync) SyncType{};
-        s_timer       = SystemTimer{};
+        s_timer = SystemTimer{};
+        for (std::size_t c = 0; c < kCoreCount; ++c)
+        {
+            s_utilTracker[c].reset();
+        }
+        s_queueMonitor.reset();
+        s_schedulerHealth.reset();
         s_kernelState = Kernel::KernelState::UNCONFIGURED;
     }
 
@@ -411,6 +539,9 @@ template <typename Cfg> class System
     inline static ErrorLogger                        s_errorLogger{};
     inline static MemoryProfiler                     s_memProfiler{};
     inline static SystemTimer                        s_timer{};
+    inline static Kernel::CoreUtilizationTracker     s_utilTracker[kCoreCount]{};
+    inline static QueueDepthMonitor                  s_queueMonitor{};
+    inline static Kernel::SchedulerHealthMetrics     s_schedulerHealth{};
 
     // =====================================================================
     // Kernel Tasks (emplaced by SystemBuilder::build())

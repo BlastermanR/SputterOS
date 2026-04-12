@@ -1,5 +1,5 @@
-#ifndef SPUTTEROS_KERNEL_TASKSTATE_H
-#define SPUTTEROS_KERNEL_TASKSTATE_H
+#ifndef SPUTTEROS_KERNEL_TASKS_TASKSTATE_H
+#define SPUTTEROS_KERNEL_TASKS_TASKSTATE_H
 
 /**
  * @file TaskState.h
@@ -38,4 +38,4 @@ enum class TaskState : uint8_t
 } // namespace Kernel
 } // namespace SputterOS
 
-#endif // SPUTTEROS_KERNEL_TASKSTATE_H
+#endif // SPUTTEROS_KERNEL_TASKS_TASKSTATE_H

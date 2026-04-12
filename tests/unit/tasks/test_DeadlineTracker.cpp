@@ -9,7 +9,7 @@
  * @date 4/10/2026
  */
 
-#include "sputteros/kernel/DeadlineTracker.h"
+#include "sputteros/kernel/metrics/DeadlineTracker.h"
 #include <gtest/gtest.h>
 
 using namespace SputterOS;

@@ -1,5 +1,5 @@
-#ifndef SPUTTEROS_KERNEL_SCHEDULEDCONTROLTASK_H
-#define SPUTTEROS_KERNEL_SCHEDULEDCONTROLTASK_H
+#ifndef SPUTTEROS_KERNEL_TASKS_SCHEDULEDCONTROLTASK_H
+#define SPUTTEROS_KERNEL_TASKS_SCHEDULEDCONTROLTASK_H
 
 #include "sputteros/ConfigTraits.h"
 #include "sputteros/kernel/KernelConstructTag.h"
@@ -172,4 +172,4 @@ template <typename Cfg> class ScheduledControlTask : public IScheduledTask
 } // namespace Kernel
 } // namespace SputterOS
 
-#endif // SPUTTEROS_KERNEL_SCHEDULEDCONTROLTASK_H
+#endif // SPUTTEROS_KERNEL_TASKS_SCHEDULEDCONTROLTASK_H

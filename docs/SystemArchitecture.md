@@ -271,7 +271,14 @@ classDiagram
         +start()
         +stop()
         +lastDuration() microseconds
+        +minDuration() microseconds
         +maxDuration() microseconds
+        +getAverageDurationUs() float
+        +sampleCount() uint32
+        +overrunCount() uint32
+        +deadlineMissCount() uint32
+        +histogram() uint32[8]
+        +percentileUs(p) microseconds
         +isOverBudget(budget) bool
         +reset()
     }
@@ -362,7 +369,12 @@ The utility layer is organized into two subfolders:
 | `MemoryProfiler` | Heap/stack high-water mark tracking. Platform stubs return 0 — subclass for real hardware. |
 | `LightweightStringBuilder` | 128-byte fixed-capacity heap-free formatter. Chainable `append()`. |
 | `NonBlockingStopwatch` | Monotonic timer: `hasExpired(time, duration) → bool`. |
-| `TaskTimer` | Per-task execution timer with injectable clock. Tracks last/max/average duration and sample count. Embedded in every `ITask`. |
+| `TaskTimer` | Per-task execution timer with injectable clock. Tracks last/min/max/average duration, sample count, overrun count, deadline-miss count, and an 8-bucket duration histogram (512 µs per bucket). Embedded in every `ITask`. |
+| `CoreUtilizationTracker` | Per-core windowed busy/total accumulator. Auto-resets every 1000 ticks; exposes `getUtilization()` for the last complete window. |
+| `SchedulerHealthMetrics` | Aggregate gap-time (idle time per tick), peak gap, total overruns, and total deadline misses across all tasks. Counters saturate at `UINT32_MAX` to prevent wrap-around. |
+| `QueueDepthMonitor` | Command queue depth tracker: last/max/average depth. Sample count saturates at `UINT32_MAX`. |
+| `PerformanceSnapshot` | POD value type (~1.2 KiB on stack). Captures a point-in-time copy of all metrics: per-core utilization, per-task histograms, queue depth, memory, and scheduler health. Returned by `System<Cfg>::snapshot()`. |
+| `PerformanceFormatter` | Heap-free formatter consuming a `PerformanceSnapshot`. Writes key=value or CSV text into a caller-provided `char` buffer. Uses integer arithmetic for float formatting. |
 
 ---
 

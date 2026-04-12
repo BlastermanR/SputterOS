@@ -2,7 +2,7 @@
 #define SPUTTEROS_OSAL_ITASK_H
 
 #include "sputteros/OpResult.h"
-#include "sputteros/kernel/TaskTimer.h"
+#include "sputteros/kernel/metrics/TaskTimer.h"
 #include "sputteros/osal/SputterTime.h"
 #include <cstddef>
 #include <cstdint>

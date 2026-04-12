@@ -1,5 +1,5 @@
-#ifndef SPUTTEROS_KERNEL_SCHEDULEDCOMMSTASK_H
-#define SPUTTEROS_KERNEL_SCHEDULEDCOMMSTASK_H
+#ifndef SPUTTEROS_KERNEL_TASKS_SCHEDULEDCOMMSTASK_H
+#define SPUTTEROS_KERNEL_TASKS_SCHEDULEDCOMMSTASK_H
 
 #include "sputteros/ConfigTraits.h"
 #include "sputteros/comms/CLI.h"
@@ -159,4 +159,4 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask
 } // namespace Kernel
 } // namespace SputterOS
 
-#endif // SPUTTEROS_KERNEL_SCHEDULEDCOMMSTASK_H
+#endif // SPUTTEROS_KERNEL_TASKS_SCHEDULEDCOMMSTASK_H
