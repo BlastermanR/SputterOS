@@ -93,27 +93,18 @@ class CoreUtilizationTracker
      * @brief Get the total wall-clock time of the current/last measurement window.
      * @return Window duration in microseconds.
      */
-    SputterMicros getWindowUs() const
-    {
-        return (m_reportedTotalUs > 0) ? m_reportedTotalUs : m_totalUs;
-    }
+    SputterMicros getWindowUs() const { return (m_reportedTotalUs > 0) ? m_reportedTotalUs : m_totalUs; }
 
     /**
      * @brief Get busy time of the current/last measurement window.
      * @return Busy duration in microseconds.
      */
-    SputterMicros getBusyUs() const
-    {
-        return (m_reportedTotalUs > 0) ? m_reportedBusyUs : m_busyUs;
-    }
+    SputterMicros getBusyUs() const { return (m_reportedTotalUs > 0) ? m_reportedBusyUs : m_busyUs; }
 
     /**
      * @brief Get the tick count in the current/last measurement window.
      */
-    uint32_t getTickCount() const
-    {
-        return (m_reportedTotalUs > 0) ? m_reportedTicks : m_tickCount;
-    }
+    uint32_t getTickCount() const { return (m_reportedTotalUs > 0) ? m_reportedTicks : m_tickCount; }
 
     /**
      * @brief Reset all tracking state.

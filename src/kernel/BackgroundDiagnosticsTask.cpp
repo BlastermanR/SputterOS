@@ -74,7 +74,7 @@ void BackgroundDiagnosticsTask::tick(SputterMicros /*systemTimeMicros*/)
             if (m_monitoredTasks[i])
             {
                 totalOverruns += m_monitoredTasks[i]->timer().overrunCount();
-                totalMisses   += m_monitoredTasks[i]->timer().deadlineMissCount();
+                totalMisses += m_monitoredTasks[i]->timer().deadlineMissCount();
             }
         }
         m_schedulerHealth->setAggregates(totalOverruns, totalMisses);

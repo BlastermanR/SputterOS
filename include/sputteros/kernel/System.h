@@ -44,10 +44,10 @@
  */
 
 #include "sputteros/ConfigTraits.h"
-#include "sputteros/kernel/tasks/BackgroundDiagnosticsTask.h"
-#include "sputteros/kernel/metrics/CoreUtilizationTracker.h"
 #include "sputteros/kernel/KernelState.h"
+#include "sputteros/kernel/metrics/CoreUtilizationTracker.h"
 #include "sputteros/kernel/metrics/SchedulerHealthMetrics.h"
+#include "sputteros/kernel/tasks/BackgroundDiagnosticsTask.h"
 #include "sputteros/kernel/tasks/ScheduledCommsTask.h"
 #include "sputteros/kernel/tasks/ScheduledControlTask.h"
 #include "sputteros/osal/sync/LockFreeQueue.h"
@@ -270,10 +270,8 @@ template <typename Cfg> class System
         s_utilTracker[coreId].recordTickEnd(tickEndTime, busyAccum);
 
         // Record gap time (wall time - busy time) for scheduler health
-        SputterMicros wallTime = (tickEndTime >= systemTimeMicros)
-                                     ? (tickEndTime - systemTimeMicros)
-                                     : 0;
-        SputterMicros gapUs = (wallTime >= busyAccum) ? (wallTime - busyAccum) : 0;
+        SputterMicros wallTime = (tickEndTime >= systemTimeMicros) ? (tickEndTime - systemTimeMicros) : 0;
+        SputterMicros gapUs    = (wallTime >= busyAccum) ? (wallTime - busyAccum) : 0;
         s_schedulerHealth.recordGap(gapUs);
 
         // Sample queue depth once per tick (on core 0 to avoid double-counting)
@@ -519,7 +517,7 @@ template <typename Cfg> class System
         // Reinitialize sync primitives (atomics are not assignable)
         new (&s_watchdog) WatchdogSync<kCoreCount>{};
         new (&s_sync) SyncType{};
-        s_timer       = SystemTimer{};
+        s_timer = SystemTimer{};
         for (std::size_t c = 0; c < kCoreCount; ++c)
         {
             s_utilTracker[c].reset();
@@ -541,9 +539,9 @@ template <typename Cfg> class System
     inline static ErrorLogger                        s_errorLogger{};
     inline static MemoryProfiler                     s_memProfiler{};
     inline static SystemTimer                        s_timer{};
-    inline static Kernel::CoreUtilizationTracker       s_utilTracker[kCoreCount]{};
-    inline static QueueDepthMonitor                     s_queueMonitor{};
-    inline static Kernel::SchedulerHealthMetrics          s_schedulerHealth{};
+    inline static Kernel::CoreUtilizationTracker     s_utilTracker[kCoreCount]{};
+    inline static QueueDepthMonitor                  s_queueMonitor{};
+    inline static Kernel::SchedulerHealthMetrics     s_schedulerHealth{};
 
     // =====================================================================
     // Kernel Tasks (emplaced by SystemBuilder::build())

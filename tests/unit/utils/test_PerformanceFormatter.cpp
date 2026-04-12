@@ -26,24 +26,24 @@ using namespace SputterOS;
 static PerformanceSnapshot makeTestSnapshot()
 {
     PerformanceSnapshot snap{};
-    snap.timestamp        = 1000000;
-    snap.coreCount        = 2;
-    snap.coreUtilization[0] = 0.25f;
-    snap.coreUtilization[1] = 0.10f;
-    snap.queueDepth       = 3;
-    snap.queueMaxDepth    = 7;
-    snap.queueAvgDepth    = 2.5f;
-    snap.peakHeapUsed     = 1024;
-    snap.freeHeap         = 4096;
-    snap.stackHighWater   = 512;
-    snap.totalGapUs       = 50000;
-    snap.maxGapUs         = 200;
-    snap.avgGapUs         = 50.0f;
+    snap.timestamp           = 1000000;
+    snap.coreCount           = 2;
+    snap.coreUtilization[0]  = 0.25f;
+    snap.coreUtilization[1]  = 0.10f;
+    snap.queueDepth          = 3;
+    snap.queueMaxDepth       = 7;
+    snap.queueAvgDepth       = 2.5f;
+    snap.peakHeapUsed        = 1024;
+    snap.freeHeap            = 4096;
+    snap.stackHighWater      = 512;
+    snap.totalGapUs          = 50000;
+    snap.maxGapUs            = 200;
+    snap.avgGapUs            = 50.0f;
     snap.schedulerTickCount  = 1000;
     snap.totalOverruns       = 2;
     snap.totalDeadlineMisses = 1;
 
-    snap.taskCount = 1;
+    snap.taskCount          = 1;
     snap.tasks[0].taskIndex = 0;
     snap.tasks[0].coreId    = 0;
     snap.tasks[0].lastUs    = 100;
@@ -71,7 +71,7 @@ class PerformanceFormatterTest : public ::testing::Test
 {
   protected:
     static constexpr std::size_t kBufSize = 4096;
-    char m_buf[kBufSize]{};
+    char                         m_buf[kBufSize]{};
 };
 
 // ===========================================================================
@@ -280,7 +280,7 @@ TEST_F(PerformanceFormatterTest, KeyValue_NoTasks_OmitsTaskLines)
     snap.coreCount = 1;
     snap.taskCount = 0;
 
-    auto len = PerformanceFormatter::formatKeyValue(snap, m_buf, kBufSize);
+    auto        len = PerformanceFormatter::formatKeyValue(snap, m_buf, kBufSize);
     std::string out(m_buf, len);
 
     EXPECT_NE(out.find("task_count=0\n"), std::string::npos);
@@ -289,9 +289,9 @@ TEST_F(PerformanceFormatterTest, KeyValue_NoTasks_OmitsTaskLines)
 
 TEST_F(PerformanceFormatterTest, KeyValue_MultiDigitTaskIndex)
 {
-    auto snap       = makeTestSnapshot();
-    snap.taskCount  = 2;
-    snap.tasks[1]   = snap.tasks[0];
+    auto snap               = makeTestSnapshot();
+    snap.taskCount          = 2;
+    snap.tasks[1]           = snap.tasks[0];
     snap.tasks[1].taskIndex = 1;
     snap.tasks[1].coreId    = 1;
 

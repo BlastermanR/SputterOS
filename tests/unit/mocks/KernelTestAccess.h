@@ -1,10 +1,10 @@
 #ifndef SPUTTEROS_UNIT_MOCKS_KERNELTESTACCESS_H
 #define SPUTTEROS_UNIT_MOCKS_KERNELTESTACCESS_H
 
+#include "sputteros/kernel/System.h"
 #include "sputteros/kernel/tasks/BackgroundDiagnosticsTask.h"
 #include "sputteros/kernel/tasks/ScheduledCommsTask.h"
 #include "sputteros/kernel/tasks/ScheduledControlTask.h"
-#include "sputteros/kernel/System.h"
 
 /**
  * @file KernelTestAccess.h

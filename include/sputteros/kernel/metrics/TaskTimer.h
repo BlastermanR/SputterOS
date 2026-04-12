@@ -79,9 +79,8 @@ class TaskTimer
         ++m_sampleCount;
 
         // Histogram: bucket index = elapsed / bucketWidth, clamped to last bucket
-        std::size_t bucket = (kHistogramBucketWidthUs > 0)
-                                 ? static_cast<std::size_t>(elapsed / kHistogramBucketWidthUs)
-                                 : 0;
+        std::size_t bucket =
+            (kHistogramBucketWidthUs > 0) ? static_cast<std::size_t>(elapsed / kHistogramBucketWidthUs) : 0;
         if (bucket >= kHistogramBuckets)
         {
             bucket = kHistogramBuckets - 1;
@@ -193,7 +192,7 @@ class TaskTimer
         }
 
         // Target sample index (1-based rank)
-        float targetRank = p * static_cast<float>(m_sampleCount);
+        float    targetRank = p * static_cast<float>(m_sampleCount);
         uint32_t cumulative = 0;
 
         for (std::size_t i = 0; i < kHistogramBuckets; ++i)
@@ -202,21 +201,18 @@ class TaskTimer
             if (static_cast<float>(cumulative) >= targetRank)
             {
                 // Linear interpolation within this bucket
-                uint32_t prevCumulative = cumulative - m_histogram[i];
-                float fraction = (m_histogram[i] > 0)
-                                     ? (targetRank - static_cast<float>(prevCumulative))
-                                           / static_cast<float>(m_histogram[i])
-                                     : 0.0f;
+                uint32_t      prevCumulative = cumulative - m_histogram[i];
+                float         fraction  = (m_histogram[i] > 0) ? (targetRank - static_cast<float>(prevCumulative)) /
+                                                            static_cast<float>(m_histogram[i])
+                                                               : 0.0f;
                 SputterMicros bucketLow = i * kHistogramBucketWidthUs;
-                SputterMicros bucketHigh = (i < kHistogramBuckets - 1)
-                                               ? (i + 1) * kHistogramBucketWidthUs
-                                               : m_maxDuration;
+                SputterMicros bucketHigh =
+                    (i < kHistogramBuckets - 1) ? (i + 1) * kHistogramBucketWidthUs : m_maxDuration;
                 if (bucketHigh < bucketLow)
                 {
                     bucketHigh = bucketLow;
                 }
-                return bucketLow + static_cast<SputterMicros>(
-                                       fraction * static_cast<float>(bucketHigh - bucketLow));
+                return bucketLow + static_cast<SputterMicros>(fraction * static_cast<float>(bucketHigh - bucketLow));
             }
         }
         return m_maxDuration;
@@ -244,13 +240,13 @@ class TaskTimer
     MicrosecondSource m_clockSource{nullptr}; /**< @brief Injected platform clock. */
     SputterMicros     m_lastDuration{0};      /**< @brief Duration of the last tick (µs). */
     SputterMicros     m_minDuration{          /**< @brief Minimum duration since last reset (µs). */
-                                     std::numeric_limits<SputterMicros>::max()};
-    SputterMicros     m_maxDuration{0};       /**< @brief Peak duration since last reset (µs). */
-    SputterMicros     m_start{0};             /**< @brief Start timestamp of the current tick (µs). */
-    uint64_t          m_sumDurationUs{0};     /**< @brief Accumulated sum for average calculation (µs). */
-    uint32_t          m_sampleCount{0};       /**< @brief Number of completed timing samples. */
-    uint32_t          m_overrunCount{0};      /**< @brief Number of tick overruns recorded. */
-    uint32_t          m_deadlineMissCount{0}; /**< @brief Number of deadline misses recorded. */
+                                std::numeric_limits<SputterMicros>::max()};
+    SputterMicros     m_maxDuration{0};                 /**< @brief Peak duration since last reset (µs). */
+    SputterMicros     m_start{0};                       /**< @brief Start timestamp of the current tick (µs). */
+    uint64_t          m_sumDurationUs{0};               /**< @brief Accumulated sum for average calculation (µs). */
+    uint32_t          m_sampleCount{0};                 /**< @brief Number of completed timing samples. */
+    uint32_t          m_overrunCount{0};                /**< @brief Number of tick overruns recorded. */
+    uint32_t          m_deadlineMissCount{0};           /**< @brief Number of deadline misses recorded. */
     uint32_t          m_histogram[kHistogramBuckets]{}; /**< @brief Duration distribution buckets. */
 };
 

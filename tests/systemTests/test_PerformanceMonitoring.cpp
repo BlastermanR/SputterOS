@@ -32,8 +32,18 @@ using namespace SputterOS::SystemTests;
 
 struct PerfMonCfg
 {
-    enum class State : uint8_t { IDLE = 0, RUNNING, FAULT };
-    enum class CmdID : uint8_t { SET_STATE = 0, SET_FLOW = 1, ABORT = 2 };
+    enum class State : uint8_t
+    {
+        IDLE = 0,
+        RUNNING,
+        FAULT
+    };
+    enum class CmdID : uint8_t
+    {
+        SET_STATE = 0,
+        SET_FLOW  = 1,
+        ABORT     = 2
+    };
     struct Command
     {
         CmdID   id;
@@ -110,8 +120,7 @@ TEST_F(PerformanceMonitoringTest, Snapshot_AfterTicks_PopulatesAllFields)
             {
                 histTotal += snap.tasks[i].histogram[b];
             }
-            EXPECT_EQ(histTotal, snap.tasks[i].samples)
-                << "Histogram total should equal sample count for task " << i;
+            EXPECT_EQ(histTotal, snap.tasks[i].samples) << "Histogram total should equal sample count for task " << i;
         }
     }
     EXPECT_TRUE(foundSamples);

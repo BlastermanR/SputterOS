@@ -9,11 +9,11 @@
  * @date 4/11/2026
  */
 
+#include "../mocks/KernelTestAccess.h"
 #include "sputteros/builder/SystemBuilder.h"
 #include "sputteros/hal/devices/IStream.h"
 #include "sputteros/kernel/System.h"
 #include "sputteros/utils/PerformanceSnapshot.h"
-#include "../mocks/KernelTestAccess.h"
 
 #include <gtest/gtest.h>
 
@@ -25,8 +25,17 @@ using namespace SputterOS;
 
 template <int N> struct SnapTestCfg
 {
-    enum class State : uint8_t { IDLE = 0, RUNNING, FAULT };
-    enum class CmdID : uint8_t { SET_STATE = 0, SET_FLOW = 1 };
+    enum class State : uint8_t
+    {
+        IDLE = 0,
+        RUNNING,
+        FAULT
+    };
+    enum class CmdID : uint8_t
+    {
+        SET_STATE = 0,
+        SET_FLOW  = 1
+    };
     struct Command
     {
         CmdID   id;
@@ -72,10 +81,10 @@ class FakeStream : public IStream
 class DummyTask : public IScheduledTask
 {
   public:
-    void init() override {}
-    void tick(SputterMicros) override { ++m_ticks; }
+    void          init() override {}
+    void          tick(SputterMicros) override { ++m_ticks; }
     SputterMicros periodUs() const override { return 10000; }
-    uint32_t m_ticks = 0;
+    uint32_t      m_ticks = 0;
 };
 
 // ===========================================================================
@@ -191,7 +200,8 @@ TEST_F(PerformanceSnapshotTest, Snapshot_TaskHistogramPopulated)
                 break;
             }
         }
-        if (anyHist) break;
+        if (anyHist)
+            break;
     }
     EXPECT_TRUE(anyHist);
 }

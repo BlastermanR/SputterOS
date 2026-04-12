@@ -149,9 +149,9 @@ class BackgroundDiagnosticsTask : public IBackgroundTask
      * --------------------
      */
     static constexpr uint32_t kMemCheckInterval = 100;
-    uint32_t                  m_tickCount; /**< @brief Incremented each tick for sub-rate scheduling. */
-    QueueDepthMonitor        *m_queueMonitor{nullptr}; /**< @brief Optional queue depth sampler. */
-    SchedulerHealthMetrics    *m_schedulerHealth{nullptr}; /**< @brief Optional scheduler health aggregator. */
+    uint32_t                  m_tickCount;                /**< @brief Incremented each tick for sub-rate scheduling. */
+    QueueDepthMonitor        *m_queueMonitor{nullptr};    /**< @brief Optional queue depth sampler. */
+    SchedulerHealthMetrics   *m_schedulerHealth{nullptr}; /**< @brief Optional scheduler health aggregator. */
 };
 
 } // namespace Kernel

@@ -40,8 +40,8 @@ std::size_t PerformanceFormatter::appendChar(char *buf, std::size_t pos, std::si
 std::size_t PerformanceFormatter::appendU64(char *buf, std::size_t pos, std::size_t bufLen, uint64_t val)
 {
     // Convert to decimal in a temp buffer, then copy
-    char   tmp[21]; // max uint64 is 20 digits
-    int    idx = 0;
+    char tmp[21]; // max uint64 is 20 digits
+    int  idx = 0;
     if (val == 0)
     {
         tmp[idx++] = '0';
@@ -107,28 +107,28 @@ std::size_t PerformanceFormatter::appendFloat(char *buf, std::size_t pos, std::s
 // =========================================================================
 
 /// Helper macro to reduce repetition in key=value formatting
-#define KV_U64(key, val)                                                               \
-    do                                                                                 \
-    {                                                                                  \
-        pos += appendStr(buf, pos, bufLen, key "=");                                   \
-        pos += appendU64(buf, pos, bufLen, static_cast<uint64_t>(val));                \
-        pos += appendChar(buf, pos, bufLen, '\n');                                     \
+#define KV_U64(key, val)                                                                                               \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        pos += appendStr(buf, pos, bufLen, key "=");                                                                   \
+        pos += appendU64(buf, pos, bufLen, static_cast<uint64_t>(val));                                                \
+        pos += appendChar(buf, pos, bufLen, '\n');                                                                     \
     } while (0)
 
-#define KV_U32(key, val)                                                               \
-    do                                                                                 \
-    {                                                                                  \
-        pos += appendStr(buf, pos, bufLen, key "=");                                   \
-        pos += appendU32(buf, pos, bufLen, static_cast<uint32_t>(val));                \
-        pos += appendChar(buf, pos, bufLen, '\n');                                     \
+#define KV_U32(key, val)                                                                                               \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        pos += appendStr(buf, pos, bufLen, key "=");                                                                   \
+        pos += appendU32(buf, pos, bufLen, static_cast<uint32_t>(val));                                                \
+        pos += appendChar(buf, pos, bufLen, '\n');                                                                     \
     } while (0)
 
-#define KV_FLOAT(key, val)                                                             \
-    do                                                                                 \
-    {                                                                                  \
-        pos += appendStr(buf, pos, bufLen, key "=");                                   \
-        pos += appendFloat(buf, pos, bufLen, val);                                     \
-        pos += appendChar(buf, pos, bufLen, '\n');                                     \
+#define KV_FLOAT(key, val)                                                                                             \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        pos += appendStr(buf, pos, bufLen, key "=");                                                                   \
+        pos += appendFloat(buf, pos, bufLen, val);                                                                     \
+        pos += appendChar(buf, pos, bufLen, '\n');                                                                     \
     } while (0)
 
 std::size_t PerformanceFormatter::formatKeyValue(const PerformanceSnapshot &snap, char *buf, std::size_t bufLen)
@@ -172,7 +172,7 @@ std::size_t PerformanceFormatter::formatKeyValue(const PerformanceSnapshot &snap
     for (std::size_t i = 0; i < snap.taskCount && i < kMaxSnapshotTasks; ++i)
     {
         const auto &t = snap.tasks[i];
-        char prefix[8]; // "tNN_" fits comfortably
+        char        prefix[8]; // "tNN_" fits comfortably
         std::size_t pLen = 0;
         prefix[pLen++]   = 't';
         if (i >= 10)
@@ -258,9 +258,10 @@ std::size_t PerformanceFormatter::formatCSV(const PerformanceSnapshot &snap, cha
     std::size_t pos = 0;
 
     // Header row for system metrics
-    pos += appendStr(buf, pos, bufLen, "timestamp,cores,queue_depth,queue_max,queue_avg,"
-                                       "heap_peak,heap_free,stack_hw,"
-                                       "gap_total,gap_max,gap_avg,sched_ticks,overruns,deadline_misses\n");
+    pos += appendStr(buf, pos, bufLen,
+                     "timestamp,cores,queue_depth,queue_max,queue_avg,"
+                     "heap_peak,heap_free,stack_hw,"
+                     "gap_total,gap_max,gap_avg,sched_ticks,overruns,deadline_misses\n");
 
     // System data row
     pos += appendU64(buf, pos, bufLen, snap.timestamp);

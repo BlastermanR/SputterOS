@@ -33,15 +33,15 @@ namespace SputterOS
  */
 struct TaskSnapshot
 {
-    std::size_t   taskIndex;  /**< @brief Task index in the core task list. */
-    std::size_t   coreId;     /**< @brief Core this task runs on. */
-    SputterMicros lastUs;     /**< @brief Most recent tick duration (µs). */
-    SputterMicros minUs;      /**< @brief Minimum tick duration since reset (µs). */
-    SputterMicros maxUs;      /**< @brief Maximum tick duration since reset (µs). */
-    float         avgUs;      /**< @brief Average tick duration (µs). */
-    uint32_t      samples;    /**< @brief Number of timing samples. */
-    uint32_t      overruns;   /**< @brief Budget overrun count. */
-    uint32_t      misses;     /**< @brief Deadline miss count. */
+    std::size_t   taskIndex; /**< @brief Task index in the core task list. */
+    std::size_t   coreId;    /**< @brief Core this task runs on. */
+    SputterMicros lastUs;    /**< @brief Most recent tick duration (µs). */
+    SputterMicros minUs;     /**< @brief Minimum tick duration since reset (µs). */
+    SputterMicros maxUs;     /**< @brief Maximum tick duration since reset (µs). */
+    float         avgUs;     /**< @brief Average tick duration (µs). */
+    uint32_t      samples;   /**< @brief Number of timing samples. */
+    uint32_t      overruns;  /**< @brief Budget overrun count. */
+    uint32_t      misses;    /**< @brief Deadline miss count. */
     uint32_t      histogram[Kernel::TaskTimer::kHistogramBuckets]; /**< @brief Duration distribution. */
 };
 
@@ -62,7 +62,7 @@ struct PerformanceSnapshot
     SputterMicros timestamp; /**< @brief Capture time (µs). */
 
     // -- Core utilization --
-    std::size_t coreCount;                         /**< @brief Number of active cores. */
+    std::size_t coreCount;                          /**< @brief Number of active cores. */
     float       coreUtilization[kMaxSnapshotCores]; /**< @brief Per-core utilization [0.0, 1.0]. */
 
     // -- Command queue --
@@ -84,8 +84,8 @@ struct PerformanceSnapshot
     uint32_t      totalDeadlineMisses; /**< @brief Aggregate deadline misses across all tasks. */
 
     // -- Per-task details --
-    std::size_t  taskCount;                       /**< @brief Number of task entries populated. */
-    TaskSnapshot tasks[kMaxSnapshotTasks];         /**< @brief Per-task timing snapshots. */
+    std::size_t  taskCount;                /**< @brief Number of task entries populated. */
+    TaskSnapshot tasks[kMaxSnapshotTasks]; /**< @brief Per-task timing snapshots. */
 };
 
 } // namespace SputterOS
