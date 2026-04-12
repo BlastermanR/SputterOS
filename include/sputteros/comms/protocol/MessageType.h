@@ -43,7 +43,7 @@ enum class MessageType : uint8_t
     PERF_DATA      = 0x88, /**< @brief Structured performance data block. */
 
     // ── Bidirectional (0xFX) ─────────────────────────────────────────────
-    HEARTBEAT      = 0xF0, /**< @brief Keepalive ping / pong. */
+    HEARTBEAT = 0xF0, /**< @brief Keepalive ping / pong. */
 };
 
 // =========================================================================

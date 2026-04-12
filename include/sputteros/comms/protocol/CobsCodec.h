@@ -66,9 +66,9 @@ inline std::size_t encode(const uint8_t *src, std::size_t srcLen, uint8_t *dst, 
         return 0;
     }
 
-    std::size_t writeIdx    = 0;
-    std::size_t codeIdx     = writeIdx++;
-    uint8_t     code        = 1;
+    std::size_t writeIdx = 0;
+    std::size_t codeIdx  = writeIdx++;
+    uint8_t     code     = 1;
 
     for (std::size_t i = 0; i < srcLen; ++i)
     {

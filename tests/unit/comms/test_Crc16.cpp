@@ -35,7 +35,7 @@ TEST(Crc16Test, EmptyInput_ReturnsInit)
 TEST(Crc16Test, SingleByte_Zero)
 {
     const uint8_t data[] = {0x00};
-    uint16_t result = crc16(data, 1);
+    uint16_t      result = crc16(data, 1);
     // Not the init value — CRC was computed.
     EXPECT_NE(result, 0xFFFF);
 }
@@ -43,7 +43,7 @@ TEST(Crc16Test, SingleByte_Zero)
 TEST(Crc16Test, SingleByte_FF)
 {
     const uint8_t data[] = {0xFF};
-    uint16_t result = crc16(data, 1);
+    uint16_t      result = crc16(data, 1);
     EXPECT_NE(result, 0xFFFF);
 }
 
@@ -59,7 +59,7 @@ TEST(Crc16Test, Incremental_MatchesSinglePass)
 
     // Compute in two increments.
     uint16_t crc = crc16(data, 3);
-    crc = crc16(data + 3, 2, crc);
+    crc          = crc16(data + 3, 2, crc);
 
     EXPECT_EQ(crc, singlePass);
 }
@@ -71,8 +71,8 @@ TEST(Crc16Test, Incremental_MatchesSinglePass)
 TEST(Crc16Test, CustomInit_DifferentResult)
 {
     const uint8_t data[] = {0xAA, 0xBB};
-    uint16_t a = crc16(data, 2, 0xFFFF);
-    uint16_t b = crc16(data, 2, 0x0000);
+    uint16_t      a      = crc16(data, 2, 0xFFFF);
+    uint16_t      b      = crc16(data, 2, 0x0000);
     EXPECT_NE(a, b);
 }
 
@@ -83,7 +83,7 @@ TEST(Crc16Test, CustomInit_DifferentResult)
 TEST(Crc16Test, Deterministic_SameInputSameOutput)
 {
     const uint8_t data[] = {0x10, 0x20, 0x30};
-    uint16_t a = crc16(data, 3);
-    uint16_t b = crc16(data, 3);
+    uint16_t      a      = crc16(data, 3);
+    uint16_t      b      = crc16(data, 3);
     EXPECT_EQ(a, b);
 }

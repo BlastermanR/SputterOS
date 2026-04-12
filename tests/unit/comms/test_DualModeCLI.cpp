@@ -46,8 +46,8 @@ class FakeStream : public IStream
 
     /** @brief Get all bytes written by the CLI. */
     const std::vector<uint8_t> &captured() const { return m_tx; }
-    std::string capturedString() const { return std::string(m_tx.begin(), m_tx.end()); }
-    void clearCaptured() { m_tx.clear(); }
+    std::string                 capturedString() const { return std::string(m_tx.begin(), m_tx.end()); }
+    void                        clearCaptured() { m_tx.clear(); }
 
     std::size_t available() const override { return m_rx.size(); }
 
@@ -81,13 +81,13 @@ class StubHandler : public IProtocolHandler<Cfg>
   public:
     StubHandler() = default;
 
-    bool     commandCalled    = false;
-    bool     handshakeCalled  = false;
-    bool     exitCalled       = false;
-    bool     metricsCalled    = false;
-    bool     heartbeatCalled  = false;
-    uint16_t lastVersion      = 0;
-    uint8_t  lastSeq          = 0;
+    bool     commandCalled   = false;
+    bool     handshakeCalled = false;
+    bool     exitCalled      = false;
+    bool     metricsCalled   = false;
+    bool     heartbeatCalled = false;
+    uint16_t lastVersion     = 0;
+    uint8_t  lastSeq         = 0;
 
     void onCommand(const CommandStruct &, uint8_t seqNum) override
     {
@@ -128,12 +128,12 @@ class StubHandler : public IProtocolHandler<Cfg>
 /**
  * @brief Build a complete COBS wire frame for injection into FakeStream.
  */
-static std::vector<uint8_t> buildWireFrame(MessageType type, uint8_t seqNum,
-                                            const uint8_t *payload, std::size_t payloadLen)
+static std::vector<uint8_t> buildWireFrame(MessageType type, uint8_t seqNum, const uint8_t *payload,
+                                           std::size_t payloadLen)
 {
     FrameEncoder<256> encoder;
-    uint8_t wire[FrameEncoder<256>::kMaxWireSize];
-    std::size_t n = encoder.encode(type, seqNum, payload, payloadLen, wire, sizeof(wire));
+    uint8_t           wire[FrameEncoder<256>::kMaxWireSize];
+    std::size_t       n = encoder.encode(type, seqNum, payload, payloadLen, wire, sizeof(wire));
     return std::vector<uint8_t>(wire, wire + n);
 }
 
@@ -152,8 +152,7 @@ static std::vector<uint8_t> buildHandshakeFrame(uint8_t seqNum = 1)
     return frame;
 }
 
-static std::vector<uint8_t> buildCommandFrame(uint8_t cmdId, uint8_t device, float value,
-                                               uint8_t seqNum = 2)
+static std::vector<uint8_t> buildCommandFrame(uint8_t cmdId, uint8_t device, float value, uint8_t seqNum = 2)
 {
     uint8_t payload[6];
     ResponseSerializer::serializeCommand(cmdId, device, value, payload, sizeof(payload));
@@ -172,9 +171,9 @@ static std::vector<uint8_t> buildExitFrame(uint8_t seqNum = 10)
 class DualModeCLITest : public ::testing::Test
 {
   protected:
-    FakeStream      stream;
-    StubHandler     handler;
-    CLI<Cfg>        cli{&stream};
+    FakeStream  stream;
+    StubHandler handler;
+    CLI<Cfg>    cli{&stream};
 
     void SetUp() override { cli.setProtocolHandler(&handler); }
 
@@ -193,10 +192,7 @@ class DualModeCLITest : public ::testing::Test
 // TEXT mode — backward compatibility
 // ===========================================================================
 
-TEST_F(DualModeCLITest, DefaultMode_IsText)
-{
-    EXPECT_EQ(cli.getMode(), CommsMode::TEXT);
-}
+TEST_F(DualModeCLITest, DefaultMode_IsText) { EXPECT_EQ(cli.getMode(), CommsMode::TEXT); }
 
 TEST_F(DualModeCLITest, TextMode_ValidCommand_Parseable)
 {
@@ -256,7 +252,7 @@ TEST_F(DualModeCLITest, HandshakeProbe_BadMagic_StaysText)
 {
     // Build a malformed handshake (wrong magic bytes)
     uint8_t payload[6] = {1, 0, 0xDE, 0xAD, 0xBE, 0xEF};
-    auto frame = buildWireFrame(MessageType::HANDSHAKE_REQ, 1, payload, 6);
+    auto    frame      = buildWireFrame(MessageType::HANDSHAKE_REQ, 1, payload, 6);
     stream.inject(frame.data(), frame.size());
     drainAll();
 
@@ -297,7 +293,7 @@ TEST_F(DualModeCLITest, FramedMode_CommandFrame_ProducesCommand)
 
     // Now send a COMMAND frame
     float val = 75.0f;
-    auto cmd  = buildCommandFrame(static_cast<uint8_t>(CmdID::SET_POWER_WATTAGE), 2, val, 5);
+    auto  cmd = buildCommandFrame(static_cast<uint8_t>(CmdID::SET_POWER_WATTAGE), 2, val, 5);
     stream.inject(cmd.data(), cmd.size());
     drainAll();
 
@@ -438,10 +434,7 @@ TEST_F(DualModeCLITest, NullStream_SendDoesNotCrash)
     EXPECT_NO_FATAL_FAILURE(nullCli.flush());
 }
 
-TEST_F(DualModeCLITest, HasStream_WithStream_ReturnsTrue)
-{
-    EXPECT_TRUE(cli.hasStream());
-}
+TEST_F(DualModeCLITest, HasStream_WithStream_ReturnsTrue) { EXPECT_TRUE(cli.hasStream()); }
 
 TEST_F(DualModeCLITest, HasStream_Null_ReturnsFalse)
 {

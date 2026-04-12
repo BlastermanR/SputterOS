@@ -100,8 +100,7 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask, public
                 {
                     if (m_cli.getMode() == CommsMode::FRAMED)
                     {
-                        m_cli.sendFramedAck(m_cli.getLastFramedSeqNum(),
-                                            static_cast<uint8_t>(cmd.id));
+                        m_cli.sendFramedAck(m_cli.getLastFramedSeqNum(), static_cast<uint8_t>(cmd.id));
                     }
                     else
                     {
@@ -112,8 +111,7 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask, public
                 {
                     if (m_cli.getMode() == CommsMode::FRAMED)
                     {
-                        m_cli.sendFramedNack(m_cli.getLastFramedSeqNum(),
-                                             static_cast<uint8_t>(cmd.id),
+                        m_cli.sendFramedNack(m_cli.getLastFramedSeqNum(), static_cast<uint8_t>(cmd.id),
                                              cmd.targetDevice, cmd.value);
                     }
                     else
@@ -183,10 +181,7 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask, public
      *
      * Sends HANDSHAKE_RESP to confirm the mode switch.
      */
-    void onHandshakeRequest(uint16_t /*version*/, uint8_t seqNum) override
-    {
-        m_cli.sendFramedHandshakeResp(seqNum);
-    }
+    void onHandshakeRequest(uint16_t /*version*/, uint8_t seqNum) override { m_cli.sendFramedHandshakeResp(seqNum); }
 
     /**
      * @brief Handle an EXIT_HANDSHAKE frame.
@@ -217,8 +212,7 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask, public
             return;
         }
         const PerformanceSnapshot snap = m_snapshotFn();
-        uint8_t buf[ResponseSerializer::kMetricsHeaderSize +
-                    kMaxSnapshotTasks * ResponseSerializer::kMetricsTaskSize];
+        uint8_t buf[ResponseSerializer::kMetricsHeaderSize + kMaxSnapshotTasks * ResponseSerializer::kMetricsTaskSize];
         const std::size_t len = ResponseSerializer::serializeMetrics(snap, buf, sizeof(buf));
         m_cli.sendFramedMetricsResp(seqNum, buf, len);
     }

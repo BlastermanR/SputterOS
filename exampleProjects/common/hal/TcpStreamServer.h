@@ -42,29 +42,29 @@
 
 // ── Platform socket headers ──────────────────────────────────────────────────
 #ifdef _WIN32
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN
-#  endif
-#  include <winsock2.h>
-#  include <ws2tcpip.h>
-#  ifdef _MSC_VER
-#    pragma comment(lib, "Ws2_32.lib")
-#  endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#ifdef _MSC_VER
+#pragma comment(lib, "Ws2_32.lib")
+#endif
 // Undefine Windows macros that conflict with SputterOS enum values.
-#  ifdef ERROR
-#    undef ERROR
-#  endif
-#  ifdef IGNORE
-#    undef IGNORE
-#  endif
-using SocketFd = SOCKET;
+#ifdef ERROR
+#undef ERROR
+#endif
+#ifdef IGNORE
+#undef IGNORE
+#endif
+using SocketFd                           = SOCKET;
 static constexpr SocketFd kInvalidSocket = INVALID_SOCKET;
 #else
-#  include <arpa/inet.h>
-#  include <netinet/in.h>
-#  include <sys/socket.h>
-#  include <unistd.h>
-using SocketFd = int;
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+using SocketFd                           = int;
 static constexpr SocketFd kInvalidSocket = -1;
 #endif
 
@@ -108,8 +108,7 @@ class TcpStreamServer : public SputterOS::IStream
 
         int opt = 1;
 #ifdef _WIN32
-        ::setsockopt(m_serverFd, SOL_SOCKET, SO_REUSEADDR,
-                     reinterpret_cast<const char *>(&opt), sizeof(opt));
+        ::setsockopt(m_serverFd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&opt), sizeof(opt));
 #else
         ::setsockopt(m_serverFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 #endif
@@ -121,8 +120,7 @@ class TcpStreamServer : public SputterOS::IStream
 
         if (::bind(m_serverFd, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0)
         {
-            std::fprintf(stderr, "[TcpStreamServer] bind() failed on port %u\n",
-                         static_cast<unsigned>(m_port));
+            std::fprintf(stderr, "[TcpStreamServer] bind() failed on port %u\n", static_cast<unsigned>(m_port));
             closeSocket(m_serverFd);
             return false;
         }
@@ -134,7 +132,7 @@ class TcpStreamServer : public SputterOS::IStream
 
         sockaddr_in clientAddr{};
         socklen_t   clientLen = sizeof(clientAddr);
-        m_clientFd = ::accept(m_serverFd, reinterpret_cast<sockaddr *>(&clientAddr), &clientLen);
+        m_clientFd            = ::accept(m_serverFd, reinterpret_cast<sockaddr *>(&clientAddr), &clientLen);
         if (m_clientFd == kInvalidSocket)
         {
             std::fprintf(stderr, "[TcpStreamServer] accept() failed\n");
@@ -188,8 +186,8 @@ class TcpStreamServer : public SputterOS::IStream
         const std::size_t           n = (max_len < m_rxLen) ? max_len : m_rxLen;
         for (std::size_t i = 0; i < n; ++i)
         {
-            buffer[i]  = m_rxBuf[m_rxHead];
-            m_rxHead   = (m_rxHead + 1) % kRxBufSize;
+            buffer[i] = m_rxBuf[m_rxHead];
+            m_rxHead  = (m_rxHead + 1) % kRxBufSize;
         }
         m_rxLen -= n;
         return n;
@@ -201,16 +199,11 @@ class TcpStreamServer : public SputterOS::IStream
         {
             return 0;
         }
-        const int sent = ::send(m_clientFd,
-                                reinterpret_cast<const char *>(data),
-                                static_cast<int>(len), 0);
+        const int sent = ::send(m_clientFd, reinterpret_cast<const char *>(data), static_cast<int>(len), 0);
         return (sent < 0) ? 0U : static_cast<std::size_t>(sent);
     }
 
-    bool isConnected() const override
-    {
-        return m_connected.load(std::memory_order_acquire);
-    }
+    bool isConnected() const override { return m_connected.load(std::memory_order_acquire); }
 
   private:
     void rxLoop()
@@ -218,8 +211,7 @@ class TcpStreamServer : public SputterOS::IStream
         uint8_t tmp[256];
         while (m_connected.load(std::memory_order_acquire))
         {
-            const int n = ::recv(m_clientFd, reinterpret_cast<char *>(tmp),
-                                 static_cast<int>(sizeof(tmp)), 0);
+            const int n = ::recv(m_clientFd, reinterpret_cast<char *>(tmp), static_cast<int>(sizeof(tmp)), 0);
             if (n <= 0)
             {
                 m_connected.store(false, std::memory_order_release);
@@ -254,18 +246,18 @@ class TcpStreamServer : public SputterOS::IStream
     }
 
     // ── Members ─────────────────────────────────────────────────────────────
-    uint16_t              m_port;
-    SocketFd              m_serverFd{kInvalidSocket};
-    SocketFd              m_clientFd{kInvalidSocket};
-    std::atomic<bool>     m_connected{false};
+    uint16_t          m_port;
+    SocketFd          m_serverFd{kInvalidSocket};
+    SocketFd          m_clientFd{kInvalidSocket};
+    std::atomic<bool> m_connected{false};
 
-    mutable std::mutex    m_rxMutex{};
-    uint8_t               m_rxBuf[kRxBufSize]{};
-    std::size_t           m_rxHead{0};
-    std::size_t           m_rxTail{0};
-    std::size_t           m_rxLen{0};
+    mutable std::mutex m_rxMutex{};
+    uint8_t            m_rxBuf[kRxBufSize]{};
+    std::size_t        m_rxHead{0};
+    std::size_t        m_rxTail{0};
+    std::size_t        m_rxLen{0};
 
-    std::thread           m_rxThread;
+    std::thread m_rxThread;
 };
 
 } // namespace ExamplesCommon

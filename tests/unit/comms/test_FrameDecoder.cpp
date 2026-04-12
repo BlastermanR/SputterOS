@@ -19,18 +19,18 @@
 using namespace SputterOS;
 
 static constexpr std::size_t kTestPayload = 256;
-using TestEncoder = FrameEncoder<kTestPayload>;
-using TestDecoder = FrameDecoder<kTestPayload>;
+using TestEncoder                         = FrameEncoder<kTestPayload>;
+using TestDecoder                         = FrameDecoder<kTestPayload>;
 
 // ===========================================================================
 // Helper: encode a frame then feed it to a decoder
 // ===========================================================================
 
-static DecoderResult feedEncodedFrame(TestDecoder &dec, MessageType type, uint8_t seq,
-                                      const uint8_t *payload, std::size_t payLen)
+static DecoderResult feedEncodedFrame(TestDecoder &dec, MessageType type, uint8_t seq, const uint8_t *payload,
+                                      std::size_t payLen)
 {
     TestEncoder enc;
-    uint8_t wire[TestEncoder::kMaxWireSize];
+    uint8_t     wire[TestEncoder::kMaxWireSize];
     std::size_t n = enc.encode(type, seq, payload, payLen, wire, sizeof(wire));
     if (n == 0)
     {
@@ -52,7 +52,7 @@ static DecoderResult feedEncodedFrame(TestDecoder &dec, MessageType type, uint8_
 TEST(FrameDecoderTest, DecodeValidFrame_EmptyPayload)
 {
     TestDecoder dec;
-    auto result = feedEncodedFrame(dec, MessageType::HEARTBEAT, 5, nullptr, 0);
+    auto        result = feedEncodedFrame(dec, MessageType::HEARTBEAT, 5, nullptr, 0);
     ASSERT_EQ(result, DecoderResult::FRAME_READY);
     EXPECT_EQ(dec.getMessageType(), MessageType::HEARTBEAT);
     EXPECT_EQ(dec.getSeqNum(), 5u);
@@ -61,9 +61,9 @@ TEST(FrameDecoderTest, DecodeValidFrame_EmptyPayload)
 
 TEST(FrameDecoderTest, DecodeValidFrame_WithPayload)
 {
-    TestDecoder dec;
+    TestDecoder   dec;
     const uint8_t payload[] = {0xDE, 0xAD, 0xBE, 0xEF};
-    auto result = feedEncodedFrame(dec, MessageType::DATA, 42, payload, 4);
+    auto          result    = feedEncodedFrame(dec, MessageType::DATA, 42, payload, 4);
     ASSERT_EQ(result, DecoderResult::FRAME_READY);
     EXPECT_EQ(dec.getMessageType(), MessageType::DATA);
     EXPECT_EQ(dec.getSeqNum(), 42u);
@@ -80,12 +80,12 @@ TEST(FrameDecoderTest, TwoConsecutiveFrames)
     TestDecoder dec;
 
     const uint8_t p1[] = {0x01};
-    auto r1 = feedEncodedFrame(dec, MessageType::ACK, 1, p1, 1);
+    auto          r1   = feedEncodedFrame(dec, MessageType::ACK, 1, p1, 1);
     ASSERT_EQ(r1, DecoderResult::FRAME_READY);
     EXPECT_EQ(dec.getSeqNum(), 1u);
 
     const uint8_t p2[] = {0x02};
-    auto r2 = feedEncodedFrame(dec, MessageType::NACK, 2, p2, 1);
+    auto          r2   = feedEncodedFrame(dec, MessageType::NACK, 2, p2, 1);
     ASSERT_EQ(r2, DecoderResult::FRAME_READY);
     EXPECT_EQ(dec.getSeqNum(), 2u);
 }
@@ -99,7 +99,7 @@ TEST(FrameDecoderTest, CorruptCRC_ReturnsError)
     TestEncoder enc;
     TestDecoder dec;
 
-    uint8_t wire[TestEncoder::kMaxWireSize];
+    uint8_t     wire[TestEncoder::kMaxWireSize];
     std::size_t n = enc.encode(MessageType::COMMAND, 0, nullptr, 0, wire, sizeof(wire));
     ASSERT_GT(n, 2u); // Need at least delimiter + some data
 
@@ -154,7 +154,7 @@ TEST(FrameDecoderTest, GarbageThenValidFrame_ResyncsOnDelimiter)
 
     // Feed a valid frame after re-sync.
     const uint8_t payload[] = {0x42};
-    auto result = feedEncodedFrame(dec, MessageType::ACK, 10, payload, 1);
+    auto          result    = feedEncodedFrame(dec, MessageType::ACK, 10, payload, 1);
     EXPECT_EQ(result, DecoderResult::FRAME_READY);
     EXPECT_EQ(dec.getSeqNum(), 10u);
 }
@@ -168,7 +168,7 @@ TEST(FrameDecoderTest, PartialFrame_IncompleteUntilDelimiter)
     TestEncoder enc;
     TestDecoder dec;
 
-    uint8_t wire[TestEncoder::kMaxWireSize];
+    uint8_t     wire[TestEncoder::kMaxWireSize];
     std::size_t n = enc.encode(MessageType::DATA, 3, nullptr, 0, wire, sizeof(wire));
     ASSERT_GT(n, 1u);
 
@@ -239,7 +239,7 @@ TEST(FrameDecoderTest, Roundtrip_HandshakeRequest)
     payload[4] = static_cast<uint8_t>((kHandshakeMagic >> 16) & 0xFF);
     payload[5] = static_cast<uint8_t>((kHandshakeMagic >> 24) & 0xFF);
 
-    uint8_t wire[TestEncoder::kMaxWireSize];
+    uint8_t     wire[TestEncoder::kMaxWireSize];
     std::size_t n = enc.encode(MessageType::HANDSHAKE_REQ, 0, payload, 6, wire, sizeof(wire));
     ASSERT_GT(n, 0u);
 

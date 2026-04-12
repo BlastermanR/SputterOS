@@ -61,8 +61,7 @@ inline std::size_t serializeAck(uint8_t cmdId, uint8_t *outBuf, std::size_t outC
  * @param outCap       Capacity of destination buffer.
  * @return Number of bytes written (6), or 0 on error.
  */
-inline std::size_t serializeNack(uint8_t cmdId, uint8_t targetDevice, float value, uint8_t *outBuf,
-                                 std::size_t outCap)
+inline std::size_t serializeNack(uint8_t cmdId, uint8_t targetDevice, float value, uint8_t *outBuf, std::size_t outCap)
 {
     if (outCap < 6)
     {

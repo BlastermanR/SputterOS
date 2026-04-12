@@ -42,8 +42,8 @@
 #include "LifecycleStateMachine.h"
 #include "MonitorTask.h"
 #include "SharedState.h"
-#include "WorkerTask.h"
 #include "TcpStreamServer.h"
+#include "WorkerTask.h"
 
 #include "sputteros/builder/SystemBuilder.h"
 #include "sputteros/kernel/System.h"
@@ -95,9 +95,8 @@ int main(int argc, char *argv[])
     Lifecycle::MonitorTask monitorTask(monitorTelemetry); // Core 1, 2 Hz
 
     // -- Select active stream (TCP or stdout) -------------------------------
-    SputterOS::IStream *activeStream = (tcpPort > 0)
-                                           ? static_cast<SputterOS::IStream *>(&tcpStream)
-                                           : static_cast<SputterOS::IStream *>(&stdoutStream);
+    SputterOS::IStream *activeStream = (tcpPort > 0) ? static_cast<SputterOS::IStream *>(&tcpStream)
+                                                     : static_cast<SputterOS::IStream *>(&stdoutStream);
     if (tcpPort > 0 && !tcpStream.startAccept())
         return 1;
 

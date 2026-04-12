@@ -24,7 +24,7 @@ using namespace SputterOS;
 /** @brief Roundtrip encode→decode and verify output matches input. */
 static void verifyRoundtrip(const uint8_t *data, std::size_t len)
 {
-    const std::size_t encCap = cobsMaxEncodedLen(len) + 16;
+    const std::size_t    encCap = cobsMaxEncodedLen(len) + 16;
     std::vector<uint8_t> encoded(encCap, 0xCC);
     std::vector<uint8_t> decoded(len + 16, 0xCC);
 
@@ -117,12 +117,12 @@ TEST(CobsCodecTest, Roundtrip_LargePayload)
 TEST(CobsCodecTest, KnownVector_Empty)
 {
     // Empty input encodes to a single overhead byte.
-    uint8_t encoded[2];
+    uint8_t     encoded[2];
     std::size_t n = Cobs::encode(nullptr, 0, encoded, 2);
     ASSERT_EQ(n, 1u);
     EXPECT_EQ(encoded[0], 0x01);
 
-    uint8_t decoded[1];
+    uint8_t     decoded[1];
     std::size_t d = Cobs::decode(encoded, n, decoded, 0);
     EXPECT_EQ(d, 0u);
 }
@@ -131,8 +131,8 @@ TEST(CobsCodecTest, KnownVector_00)
 {
     // Input: [0x00]  ⇒  encoded: [0x01, 0x01]
     const uint8_t in[] = {0x00};
-    uint8_t enc[4];
-    std::size_t n = Cobs::encode(in, 1, enc, 4);
+    uint8_t       enc[4];
+    std::size_t   n = Cobs::encode(in, 1, enc, 4);
     ASSERT_EQ(n, 2u);
     EXPECT_EQ(enc[0], 0x01);
     EXPECT_EQ(enc[1], 0x01);
@@ -142,8 +142,8 @@ TEST(CobsCodecTest, KnownVector_00_00)
 {
     // Input: [0x00, 0x00]  ⇒  encoded: [0x01, 0x01, 0x01]
     const uint8_t in[] = {0x00, 0x00};
-    uint8_t enc[5];
-    std::size_t n = Cobs::encode(in, 2, enc, 5);
+    uint8_t       enc[5];
+    std::size_t   n = Cobs::encode(in, 2, enc, 5);
     ASSERT_EQ(n, 3u);
     EXPECT_EQ(enc[0], 0x01);
     EXPECT_EQ(enc[1], 0x01);
@@ -154,8 +154,8 @@ TEST(CobsCodecTest, KnownVector_11_22_00_33)
 {
     // Input: [0x11, 0x22, 0x00, 0x33] ⇒ encoded: [0x03, 0x11, 0x22, 0x02, 0x33]
     const uint8_t in[] = {0x11, 0x22, 0x00, 0x33};
-    uint8_t enc[8];
-    std::size_t n = Cobs::encode(in, 4, enc, 8);
+    uint8_t       enc[8];
+    std::size_t   n = Cobs::encode(in, 4, enc, 8);
     ASSERT_EQ(n, 5u);
     EXPECT_EQ(enc[0], 0x03);
     EXPECT_EQ(enc[1], 0x11);
@@ -171,7 +171,7 @@ TEST(CobsCodecTest, KnownVector_11_22_00_33)
 TEST(CobsCodecTest, Encode_BufferTooSmall_ReturnsZero)
 {
     const uint8_t data[] = {0x01, 0x02, 0x03};
-    uint8_t enc[1]; // Way too small
+    uint8_t       enc[1]; // Way too small
     EXPECT_EQ(Cobs::encode(data, 3, enc, 1), 0u);
 }
 
@@ -185,14 +185,14 @@ TEST(CobsCodecTest, Decode_ZeroInEncodedStream_ReturnsZero)
 {
     // 0x00 in encoded stream is illegal.
     const uint8_t bad[] = {0x03, 0x00, 0x01};
-    uint8_t out[4];
+    uint8_t       out[4];
     EXPECT_EQ(Cobs::decode(bad, 3, out, 4), 0u);
 }
 
 TEST(CobsCodecTest, Decode_OutputBufferTooSmall_ReturnsZero)
 {
     const uint8_t in[] = {0x01, 0x02, 0x03};
-    uint8_t enc[8];
+    uint8_t       enc[8];
     Cobs::encode(in, 3, enc, 8);
 
     uint8_t out[1]; // Too small
@@ -203,10 +203,7 @@ TEST(CobsCodecTest, Decode_OutputBufferTooSmall_ReturnsZero)
 // cobsMaxEncodedLen
 // ===========================================================================
 
-TEST(CobsCodecTest, MaxEncodedLen_Zero)
-{
-    EXPECT_EQ(cobsMaxEncodedLen(0), 1u);
-}
+TEST(CobsCodecTest, MaxEncodedLen_Zero) { EXPECT_EQ(cobsMaxEncodedLen(0), 1u); }
 
 TEST(CobsCodecTest, MaxEncodedLen_254)
 {
@@ -214,7 +211,4 @@ TEST(CobsCodecTest, MaxEncodedLen_254)
     EXPECT_EQ(cobsMaxEncodedLen(254), 256u);
 }
 
-TEST(CobsCodecTest, MaxEncodedLen_1)
-{
-    EXPECT_EQ(cobsMaxEncodedLen(1), 2u);
-}
+TEST(CobsCodecTest, MaxEncodedLen_1) { EXPECT_EQ(cobsMaxEncodedLen(1), 2u); }

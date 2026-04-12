@@ -130,9 +130,9 @@ template <std::size_t MaxPayload = 256> class FrameDecoder
     DecoderResult processFrame()
     {
         // COBS-decode the accumulated bytes.
-        uint8_t rawBuf[kMaxRawSize];
+        uint8_t           rawBuf[kMaxRawSize];
         const std::size_t rawLen = Cobs::decode(m_cobsBuf, m_cobsLen, rawBuf, sizeof(rawBuf));
-        m_cobsLen = 0;
+        m_cobsLen                = 0;
 
         if (rawLen < kFrameOverhead)
         {
@@ -140,9 +140,9 @@ template <std::size_t MaxPayload = 256> class FrameDecoder
         }
 
         // Validate CRC16: computed over everything except the last 2 bytes.
-        const std::size_t crcOffset  = rawLen - kFrameTrailerSize;
-        const uint16_t    crcExpect  = static_cast<uint16_t>(rawBuf[crcOffset]) |
-                                       (static_cast<uint16_t>(rawBuf[crcOffset + 1]) << 8);
+        const std::size_t crcOffset = rawLen - kFrameTrailerSize;
+        const uint16_t    crcExpect =
+            static_cast<uint16_t>(rawBuf[crcOffset]) | (static_cast<uint16_t>(rawBuf[crcOffset + 1]) << 8);
         const uint16_t crcComputed = crc16(rawBuf, crcOffset);
 
         if (crcComputed != crcExpect)
@@ -153,8 +153,7 @@ template <std::size_t MaxPayload = 256> class FrameDecoder
         // Extract header fields.
         m_msgType         = static_cast<MessageType>(rawBuf[0]);
         m_seqNum          = rawBuf[1];
-        const uint16_t pl = static_cast<uint16_t>(rawBuf[2]) |
-                            (static_cast<uint16_t>(rawBuf[3]) << 8);
+        const uint16_t pl = static_cast<uint16_t>(rawBuf[2]) | (static_cast<uint16_t>(rawBuf[3]) << 8);
 
         // Validate payload length consistency.
         if (static_cast<std::size_t>(pl) != crcOffset - kFrameHeaderSize)
@@ -178,10 +177,10 @@ template <std::size_t MaxPayload = 256> class FrameDecoder
     uint8_t     m_cobsBuf[kMaxCobsSize]; /**< @brief Accumulation buffer for COBS bytes. */
     std::size_t m_cobsLen;               /**< @brief Current position in accumulation buffer. */
 
-    MessageType m_msgType;               /**< @brief Decoded message type. */
-    uint8_t     m_seqNum;                /**< @brief Decoded sequence number. */
-    uint8_t     m_payload[MaxPayload];   /**< @brief Decoded payload bytes. */
-    std::size_t m_payloadLen;            /**< @brief Length of decoded payload. */
+    MessageType m_msgType;             /**< @brief Decoded message type. */
+    uint8_t     m_seqNum;              /**< @brief Decoded sequence number. */
+    uint8_t     m_payload[MaxPayload]; /**< @brief Decoded payload bytes. */
+    std::size_t m_payloadLen;          /**< @brief Length of decoded payload. */
 };
 
 } // namespace SputterOS

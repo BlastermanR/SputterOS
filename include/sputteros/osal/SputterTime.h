@@ -79,10 +79,7 @@ class SystemTimer
      * @brief Construct a SystemTimer with an optional clock source.
      * @param src: Platform microsecond clock (nullable for deferred init).
      */
-    explicit SystemTimer(MicrosecondSource src = nullptr)
-        : m_source(src), m_epoch(src ? src() : 0)
-    {
-    }
+    explicit SystemTimer(MicrosecondSource src = nullptr) : m_source(src), m_epoch(src ? src() : 0) {}
 
     /**
      * @brief Set or replace the platform clock source.
@@ -169,7 +166,7 @@ class SystemTimer
     }
 
   private:
-    MicrosecondSource m_source; /**< @brief Injected platform clock. */
+    MicrosecondSource m_source;   /**< @brief Injected platform clock. */
     SputterMicros     m_epoch{0}; /**< @brief Raw clock value at setClockSource() time. */
 };
 

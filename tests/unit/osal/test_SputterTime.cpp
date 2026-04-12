@@ -106,8 +106,8 @@ TEST(SystemTimerTest, Microseconds_ConvertsCorrectly)
 {
     s_fakeTime = 0;
     SystemTimer timer(fakeClockDynamic); // epoch = 0
-    s_fakeTime = 1000000;               // 1,000,000 µs elapsed
-    auto        us = timer.microseconds();
+    s_fakeTime = 1000000;                // 1,000,000 µs elapsed
+    auto us    = timer.microseconds();
     EXPECT_DOUBLE_EQ(us.value(), 1000000.0);
 }
 
@@ -115,8 +115,8 @@ TEST(SystemTimerTest, Milliseconds_ConvertsCorrectly)
 {
     s_fakeTime = 0;
     SystemTimer timer(fakeClockDynamic); // epoch = 0
-    s_fakeTime = 1000000;               // 1,000,000 µs = 1000 ms
-    auto        ms = timer.milliseconds();
+    s_fakeTime = 1000000;                // 1,000,000 µs = 1000 ms
+    auto ms    = timer.milliseconds();
     EXPECT_DOUBLE_EQ(ms.value(), 1000.0);
 }
 
@@ -124,8 +124,8 @@ TEST(SystemTimerTest, Seconds_ConvertsCorrectly)
 {
     s_fakeTime = 0;
     SystemTimer timer(fakeClockDynamic); // epoch = 0
-    s_fakeTime = 1000000;               // 1,000,000 µs = 1.0 s
-    auto        s = timer.seconds();
+    s_fakeTime = 1000000;                // 1,000,000 µs = 1.0 s
+    auto s     = timer.seconds();
     EXPECT_DOUBLE_EQ(s.value(), 1.0);
 }
 

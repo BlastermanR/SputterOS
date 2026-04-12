@@ -36,22 +36,22 @@ class StubProtocolHandler : public IProtocolHandler<Cfg>
     StubProtocolHandler() = default;
 
     // Captured state
-    bool          commandCalled     = false;
+    bool          commandCalled = false;
     CommandStruct lastCommand{};
-    uint8_t       lastCommandSeq    = 0;
+    uint8_t       lastCommandSeq = 0;
 
-    bool          handshakeCalled   = false;
-    uint16_t      lastVersion       = 0;
-    uint8_t       lastHandshakeSeq  = 0;
+    bool     handshakeCalled  = false;
+    uint16_t lastVersion      = 0;
+    uint8_t  lastHandshakeSeq = 0;
 
-    bool          exitCalled        = false;
-    uint8_t       lastExitSeq       = 0;
+    bool    exitCalled  = false;
+    uint8_t lastExitSeq = 0;
 
-    bool          metricsCalled     = false;
-    uint8_t       lastMetricsSeq    = 0;
+    bool    metricsCalled  = false;
+    uint8_t lastMetricsSeq = 0;
 
-    bool          heartbeatCalled   = false;
-    uint8_t       lastHeartbeatSeq  = 0;
+    bool    heartbeatCalled  = false;
+    uint8_t lastHeartbeatSeq = 0;
 
     void onCommand(const CommandStruct &cmd, uint8_t seqNum) override
     {
@@ -62,9 +62,9 @@ class StubProtocolHandler : public IProtocolHandler<Cfg>
 
     void onHandshakeRequest(uint16_t version, uint8_t seqNum) override
     {
-        handshakeCalled   = true;
-        lastVersion       = version;
-        lastHandshakeSeq  = seqNum;
+        handshakeCalled  = true;
+        lastVersion      = version;
+        lastHandshakeSeq = seqNum;
     }
 
     void onExitHandshake(uint8_t seqNum) override
@@ -93,8 +93,8 @@ class StubProtocolHandler : public IProtocolHandler<Cfg>
 class ProtocolRouterTest : public ::testing::Test
 {
   protected:
-    StubProtocolHandler    handler;
-    ProtocolRouter<Cfg>    router{&handler};
+    StubProtocolHandler handler;
+    ProtocolRouter<Cfg> router{&handler};
 };
 
 // ===========================================================================
@@ -104,9 +104,9 @@ class ProtocolRouterTest : public ::testing::Test
 TEST_F(ProtocolRouterTest, DispatchCommand_ValidPayload_InvokesOnCommand)
 {
     uint8_t payload[6];
-    float val = 42.5f;
-    payload[0] = static_cast<uint8_t>(CmdID::SET_GAS_FLOW);
-    payload[1] = 3;
+    float   val = 42.5f;
+    payload[0]  = static_cast<uint8_t>(CmdID::SET_GAS_FLOW);
+    payload[1]  = 3;
     std::memcpy(&payload[2], &val, sizeof(float));
 
     EXPECT_TRUE(router.dispatch(MessageType::COMMAND, 7, payload, 6));

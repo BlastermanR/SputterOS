@@ -19,8 +19,8 @@
 using namespace SputterOS;
 
 static constexpr std::size_t kTestPayload = 256;
-using TestEncoder = FrameEncoder<kTestPayload>;
-using TestDecoder = FrameDecoder<kTestPayload>;
+using TestEncoder                         = FrameEncoder<kTestPayload>;
+using TestDecoder                         = FrameDecoder<kTestPayload>;
 
 // ===========================================================================
 // Basic encoding
@@ -29,7 +29,7 @@ using TestDecoder = FrameDecoder<kTestPayload>;
 TEST(FrameEncoderTest, EncodeEmptyPayload_ReturnsNonZero)
 {
     TestEncoder enc;
-    uint8_t wire[TestEncoder::kMaxWireSize];
+    uint8_t     wire[TestEncoder::kMaxWireSize];
     std::size_t n = enc.encode(MessageType::HEARTBEAT, 0, nullptr, 0, wire, sizeof(wire));
     ASSERT_GT(n, 0u);
 
@@ -39,10 +39,10 @@ TEST(FrameEncoderTest, EncodeEmptyPayload_ReturnsNonZero)
 
 TEST(FrameEncoderTest, EncodeWithPayload_ReturnsNonZero)
 {
-    TestEncoder enc;
+    TestEncoder   enc;
     const uint8_t payload[] = {0x01, 0x02, 0x03, 0x04};
-    uint8_t wire[TestEncoder::kMaxWireSize];
-    std::size_t n = enc.encode(MessageType::COMMAND, 42, payload, 4, wire, sizeof(wire));
+    uint8_t       wire[TestEncoder::kMaxWireSize];
+    std::size_t   n = enc.encode(MessageType::COMMAND, 42, payload, 4, wire, sizeof(wire));
     ASSERT_GT(n, 0u);
     EXPECT_EQ(wire[n - 1], kFrameDelimiter);
 }
@@ -56,7 +56,7 @@ TEST(FrameEncoderTest, Roundtrip_EmptyPayload)
     TestEncoder enc;
     TestDecoder dec;
 
-    uint8_t wire[TestEncoder::kMaxWireSize];
+    uint8_t     wire[TestEncoder::kMaxWireSize];
     std::size_t n = enc.encode(MessageType::ACK, 7, nullptr, 0, wire, sizeof(wire));
     ASSERT_GT(n, 0u);
 
@@ -78,12 +78,12 @@ TEST(FrameEncoderTest, Roundtrip_CommandPayload)
 
     // COMMAND payload: [CmdID:1][device:1][value:4LE]
     uint8_t payload[6];
-    payload[0] = 0x01;                          // CmdID
-    payload[1] = 0x00;                          // device
+    payload[0] = 0x01; // CmdID
+    payload[1] = 0x00; // device
     float val  = 50.0f;
     std::memcpy(&payload[2], &val, sizeof(val)); // value LE
 
-    uint8_t wire[TestEncoder::kMaxWireSize];
+    uint8_t     wire[TestEncoder::kMaxWireSize];
     std::size_t n = enc.encode(MessageType::COMMAND, 1, payload, 6, wire, sizeof(wire));
     ASSERT_GT(n, 0u);
 
@@ -115,7 +115,7 @@ TEST(FrameEncoderTest, Roundtrip_MaxPayload)
         payload[i] = static_cast<uint8_t>(i & 0xFF);
     }
 
-    uint8_t wire[TestEncoder::kMaxWireSize];
+    uint8_t     wire[TestEncoder::kMaxWireSize];
     std::size_t n = enc.encode(MessageType::DATA, 99, payload, kTestPayload, wire, sizeof(wire));
     ASSERT_GT(n, 0u);
 
@@ -136,15 +136,14 @@ TEST(FrameEncoderTest, Roundtrip_AllMessageTypes)
     TestEncoder enc;
 
     const MessageType types[] = {
-        MessageType::COMMAND,    MessageType::HANDSHAKE_REQ,  MessageType::METRICS_REQ,
-        MessageType::EXIT_HANDSHAKE, MessageType::ACK,        MessageType::NACK,
-        MessageType::HANDSHAKE_RESP, MessageType::TELEMETRY,  MessageType::METRICS_RESP,
-        MessageType::LOG,        MessageType::DATA,           MessageType::PERF_DATA,
+        MessageType::COMMAND,      MessageType::HANDSHAKE_REQ, MessageType::METRICS_REQ,    MessageType::EXIT_HANDSHAKE,
+        MessageType::ACK,          MessageType::NACK,          MessageType::HANDSHAKE_RESP, MessageType::TELEMETRY,
+        MessageType::METRICS_RESP, MessageType::LOG,           MessageType::DATA,           MessageType::PERF_DATA,
         MessageType::HEARTBEAT,
     };
 
     const uint8_t payload[] = {0xAA, 0xBB};
-    uint8_t wire[TestEncoder::kMaxWireSize];
+    uint8_t       wire[TestEncoder::kMaxWireSize];
 
     for (auto t : types)
     {
@@ -157,8 +156,7 @@ TEST(FrameEncoderTest, Roundtrip_AllMessageTypes)
         {
             result = dec.feedByte(wire[i]);
         }
-        ASSERT_EQ(result, DecoderResult::FRAME_READY)
-            << "Decode failed for type " << static_cast<int>(t);
+        ASSERT_EQ(result, DecoderResult::FRAME_READY) << "Decode failed for type " << static_cast<int>(t);
         EXPECT_EQ(dec.getMessageType(), t);
     }
 }
@@ -170,16 +168,16 @@ TEST(FrameEncoderTest, Roundtrip_AllMessageTypes)
 TEST(FrameEncoderTest, Encode_PayloadTooLarge_ReturnsZero)
 {
     FrameEncoder<8> enc;
-    uint8_t payload[16];
-    uint8_t wire[512];
+    uint8_t         payload[16];
+    uint8_t         wire[512];
     EXPECT_EQ(enc.encode(MessageType::DATA, 0, payload, 16, wire, sizeof(wire)), 0u);
 }
 
 TEST(FrameEncoderTest, Encode_OutputBufferTooSmall_ReturnsZero)
 {
-    TestEncoder enc;
+    TestEncoder   enc;
     const uint8_t payload[] = {0x01};
-    uint8_t wire[2]; // Way too small
+    uint8_t       wire[2]; // Way too small
     EXPECT_EQ(enc.encode(MessageType::ACK, 0, payload, 1, wire, sizeof(wire)), 0u);
 }
 
@@ -190,7 +188,7 @@ TEST(FrameEncoderTest, Encode_OutputBufferTooSmall_ReturnsZero)
 TEST(FrameEncoderTest, WireEndsWithDelimiter)
 {
     TestEncoder enc;
-    uint8_t wire[TestEncoder::kMaxWireSize];
+    uint8_t     wire[TestEncoder::kMaxWireSize];
     std::size_t n = enc.encode(MessageType::HEARTBEAT, 0, nullptr, 0, wire, sizeof(wire));
     ASSERT_GT(n, 0u);
     EXPECT_EQ(wire[n - 1], 0x00);
@@ -198,10 +196,10 @@ TEST(FrameEncoderTest, WireEndsWithDelimiter)
 
 TEST(FrameEncoderTest, NoBareZerosBeforeDelimiter)
 {
-    TestEncoder enc;
+    TestEncoder   enc;
     const uint8_t payload[] = {0x00, 0x00, 0x00}; // Payload with zeros
-    uint8_t wire[TestEncoder::kMaxWireSize];
-    std::size_t n = enc.encode(MessageType::DATA, 0, payload, 3, wire, sizeof(wire));
+    uint8_t       wire[TestEncoder::kMaxWireSize];
+    std::size_t   n = enc.encode(MessageType::DATA, 0, payload, 3, wire, sizeof(wire));
     ASSERT_GT(n, 0u);
 
     // All bytes except the final delimiter must be non-zero.

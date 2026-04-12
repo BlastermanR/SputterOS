@@ -57,10 +57,11 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
      * @param stream: Bidirectional byte stream (USB CDC, UART, etc.).
      *        The CLI borrows this pointer and does not take ownership.
      */
-    explicit CLI(IStream *stream) : m_stream(stream), m_hasPending(false), m_mode(CommsMode::TEXT),
-                                    m_hasFramedCommand(false), m_framedSeqNum(0),
-                                    m_handler(nullptr), m_router(nullptr),
-                                    m_probeActive(false), m_probeLen(0) {}
+    explicit CLI(IStream *stream)
+        : m_stream(stream), m_hasPending(false), m_mode(CommsMode::TEXT), m_hasFramedCommand(false), m_framedSeqNum(0),
+          m_handler(nullptr), m_router(nullptr), m_probeActive(false), m_probeLen(0)
+    {
+    }
 
     /**
      * @brief Query whether the CLI has a valid (non-null) stream.
@@ -167,7 +168,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
         {
             return false;
         }
-        cmd              = m_framedCommand;
+        cmd                = m_framedCommand;
         m_hasFramedCommand = false;
         return true;
     }
@@ -239,7 +240,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
      */
     void sendFramedAck(uint8_t seqNum, uint8_t cmdId)
     {
-        uint8_t payload[1];
+        uint8_t     payload[1];
         std::size_t pLen = ResponseSerializer::serializeAck(cmdId, payload, sizeof(payload));
         sendFrame(MessageType::ACK, seqNum, payload, pLen);
     }
@@ -253,7 +254,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
      */
     void sendFramedNack(uint8_t seqNum, uint8_t cmdId, uint8_t targetDevice, float value)
     {
-        uint8_t payload[6];
+        uint8_t     payload[6];
         std::size_t pLen = ResponseSerializer::serializeNack(cmdId, targetDevice, value, payload, sizeof(payload));
         sendFrame(MessageType::NACK, seqNum, payload, pLen);
     }
@@ -264,7 +265,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
      */
     void sendFramedHandshakeResp(uint8_t seqNum)
     {
-        uint8_t payload[6];
+        uint8_t     payload[6];
         std::size_t pLen = ResponseSerializer::serializeHandshakeResp(payload, sizeof(payload));
         sendFrame(MessageType::HANDSHAKE_RESP, seqNum, payload, pLen);
     }
@@ -280,10 +281,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
      * @param payload Pointer to data bytes.
      * @param len     Number of bytes.
      */
-    void sendFramedData(const uint8_t *payload, std::size_t len)
-    {
-        sendFrame(MessageType::DATA, 0, payload, len);
-    }
+    void sendFramedData(const uint8_t *payload, std::size_t len) { sendFrame(MessageType::DATA, 0, payload, len); }
 
     /**
      * @brief Send a framed LOG message.
@@ -292,7 +290,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
      */
     void sendFramedLog(uint8_t level, const char *text)
     {
-        uint8_t payload[MaxPayload];
+        uint8_t     payload[MaxPayload];
         std::size_t pLen = ResponseSerializer::serializeLog(level, text, payload, sizeof(payload));
         if (pLen > 0)
         {
@@ -332,17 +330,17 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
      */
     void exitFramedMode()
     {
-        m_mode           = CommsMode::TEXT;
-        m_hasPending     = false;
+        m_mode             = CommsMode::TEXT;
+        m_hasPending       = false;
         m_hasFramedCommand = false;
         m_parser.reset();
     }
 
   private:
-    IStream                  *m_stream;     /**< @brief Borrowed stream reference. */
-    CommandParser<Cfg>        m_parser;     /**< @brief Stateful byte-stream parser (TEXT mode). */
-    LightweightStringBuilder  m_builder;    /**< @brief TX telemetry buffer. */
-    bool                      m_hasPending; /**< @brief Set when parser produces a command. */
+    IStream                 *m_stream;     /**< @brief Borrowed stream reference. */
+    CommandParser<Cfg>       m_parser;     /**< @brief Stateful byte-stream parser (TEXT mode). */
+    LightweightStringBuilder m_builder;    /**< @brief TX telemetry buffer. */
+    bool                     m_hasPending; /**< @brief Set when parser produces a command. */
 
     /** @brief Maximum bytes drained from the stream per `tick()`. */
     static constexpr std::size_t kReadBufSize = 64;
@@ -350,25 +348,25 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
     uint8_t m_readBuf[kReadBufSize]; /**< @brief Scratch buffer for incoming bytes. */
 
     // ── Dual-mode state ──────────────────────────────────────────────────
-    CommsMode m_mode;                                /**< @brief Current protocol mode. */
-    FrameDecoder<MaxPayload> m_frameDecoder;         /**< @brief COBS frame decoder (FRAMED mode). */
-    FrameEncoder<MaxPayload> m_frameEncoder;         /**< @brief COBS frame encoder (output). */
+    CommsMode                m_mode;         /**< @brief Current protocol mode. */
+    FrameDecoder<MaxPayload> m_frameDecoder; /**< @brief COBS frame decoder (FRAMED mode). */
+    FrameEncoder<MaxPayload> m_frameEncoder; /**< @brief COBS frame encoder (output). */
 
-    CommandStruct m_framedCommand;                   /**< @brief Last decoded framed command. */
-    bool          m_hasFramedCommand;                /**< @brief A framed command is pending. */
-    uint8_t       m_framedSeqNum;                    /**< @brief SeqNum of last framed command. */
+    CommandStruct m_framedCommand;    /**< @brief Last decoded framed command. */
+    bool          m_hasFramedCommand; /**< @brief A framed command is pending. */
+    uint8_t       m_framedSeqNum;     /**< @brief SeqNum of last framed command. */
 
-    IProtocolHandler<Cfg>   *m_handler;              /**< @brief Borrowed protocol handler. */
-    ProtocolRouter<Cfg>     *m_router;               /**< @brief Points to m_routerStorage when active. */
+    IProtocolHandler<Cfg> *m_handler; /**< @brief Borrowed protocol handler. */
+    ProtocolRouter<Cfg>   *m_router;  /**< @brief Points to m_routerStorage when active. */
 
     /** @brief Placement storage for the ProtocolRouter. */
     alignas(ProtocolRouter<Cfg>) char m_routerStorage[sizeof(ProtocolRouter<Cfg>)];
 
     // ── Handshake probe state (TEXT mode) ────────────────────────────────
     static constexpr std::size_t kMaxProbeSize = 64;
-    uint8_t     m_probeBuf[kMaxProbeSize];           /**< @brief Accumulates COBS bytes for probe. */
-    bool        m_probeActive;                       /**< @brief True after seeing a 0x00 sync byte. */
-    std::size_t m_probeLen;                          /**< @brief Current probe buffer position. */
+    uint8_t                      m_probeBuf[kMaxProbeSize]; /**< @brief Accumulates COBS bytes for probe. */
+    bool                         m_probeActive;             /**< @brief True after seeing a 0x00 sync byte. */
+    std::size_t                  m_probeLen;                /**< @brief Current probe buffer position. */
 
     // ── TEXT mode byte processing ────────────────────────────────────────
 
@@ -448,7 +446,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
 
         // Try to decode the probe buffer as a COBS frame.
         FrameDecoder<MaxPayload> probeDec;
-        DecoderResult result = DecoderResult::INCOMPLETE;
+        DecoderResult            result = DecoderResult::INCOMPLETE;
 
         for (std::size_t i = 0; i < m_probeLen; ++i)
         {
@@ -469,8 +467,8 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
         }
 
         // Dispatch through the router (validates magic, calls handler).
-        if (!m_router->dispatch(probeDec.getMessageType(), probeDec.getSeqNum(),
-                                probeDec.getPayload(), probeDec.getPayloadLen()))
+        if (!m_router->dispatch(probeDec.getMessageType(), probeDec.getSeqNum(), probeDec.getPayload(),
+                                probeDec.getPayloadLen()))
         {
             return false;
         }
@@ -485,10 +483,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
      * @brief Process bytes in FRAMED mode.
      * @param count Number of bytes in m_readBuf to process.
      */
-    void processFramedBytes(std::size_t count)
-    {
-        processFramedBytesFrom(m_readBuf, 0, count);
-    }
+    void processFramedBytes(std::size_t count) { processFramedBytesFrom(m_readBuf, 0, count); }
 
     /**
      * @brief Process bytes from a buffer starting at an offset.
@@ -515,7 +510,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
     void handleDecodedFrame()
     {
         const MessageType type = m_frameDecoder.getMessageType();
-        const uint8_t seq      = m_frameDecoder.getSeqNum();
+        const uint8_t     seq  = m_frameDecoder.getSeqNum();
 
         // COMMAND frames are stored for the CommsTask to pick up.
         if (type == MessageType::COMMAND)
@@ -523,7 +518,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
             // Deserialize the command payload directly.
             if (m_frameDecoder.getPayloadLen() == 6)
             {
-                const uint8_t *p = m_frameDecoder.getPayload();
+                const uint8_t *p             = m_frameDecoder.getPayload();
                 m_framedCommand.id           = static_cast<typename Cfg::CmdID>(p[0]);
                 m_framedCommand.targetDevice = p[1];
                 std::memcpy(&m_framedCommand.value, &p[2], sizeof(float));
@@ -555,7 +550,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
         {
             return;
         }
-        uint8_t wire[FrameEncoder<MaxPayload>::kMaxWireSize];
+        uint8_t     wire[FrameEncoder<MaxPayload>::kMaxWireSize];
         std::size_t n = m_frameEncoder.encode(type, seqNum, payload, len, wire, sizeof(wire));
         if (n > 0)
         {

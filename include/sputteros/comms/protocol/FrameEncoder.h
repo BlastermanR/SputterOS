@@ -75,7 +75,7 @@ template <std::size_t MaxPayload = 256> class FrameEncoder
         }
 
         // -- Build raw frame in staging buffer --
-        uint8_t raw[kMaxRawSize];
+        uint8_t     raw[kMaxRawSize];
         std::size_t pos = 0;
 
         // Header: [MsgType:1][SeqNum:1][PayloadLen:2 LE]
@@ -93,8 +93,8 @@ template <std::size_t MaxPayload = 256> class FrameEncoder
 
         // Trailer: CRC16 over header + payload
         const uint16_t crc = crc16(raw, pos);
-        raw[pos++] = static_cast<uint8_t>(crc & 0xFF);
-        raw[pos++] = static_cast<uint8_t>((crc >> 8) & 0xFF);
+        raw[pos++]         = static_cast<uint8_t>(crc & 0xFF);
+        raw[pos++]         = static_cast<uint8_t>((crc >> 8) & 0xFF);
 
         // -- COBS-encode --
         const std::size_t cobsLen = Cobs::encode(raw, pos, outBuf, outCap - 1);

@@ -133,9 +133,8 @@ int main(int argc, char *argv[])
     PingPong::PongTask pongTask(pongTelemetry); // Core 1
 
     // -- Select active stream (TCP or stdout) -------------------------------
-    SputterOS::IStream *activeStream = (tcpPort > 0)
-                                           ? static_cast<SputterOS::IStream *>(&tcpStream)
-                                           : static_cast<SputterOS::IStream *>(&stdoutStream);
+    SputterOS::IStream *activeStream = (tcpPort > 0) ? static_cast<SputterOS::IStream *>(&tcpStream)
+                                                     : static_cast<SputterOS::IStream *>(&stdoutStream);
     if (tcpPort > 0 && !tcpStream.startAccept())
         return 1;
 

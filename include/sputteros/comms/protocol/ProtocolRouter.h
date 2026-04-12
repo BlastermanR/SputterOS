@@ -133,13 +133,10 @@ template <typename Cfg> class ProtocolRouter
             return false;
         }
 
-        const uint16_t version = static_cast<uint16_t>(payload[0]) |
-                                 (static_cast<uint16_t>(payload[1]) << 8);
+        const uint16_t version = static_cast<uint16_t>(payload[0]) | (static_cast<uint16_t>(payload[1]) << 8);
 
-        const uint32_t magic = static_cast<uint32_t>(payload[2]) |
-                               (static_cast<uint32_t>(payload[3]) << 8) |
-                               (static_cast<uint32_t>(payload[4]) << 16) |
-                               (static_cast<uint32_t>(payload[5]) << 24);
+        const uint32_t magic = static_cast<uint32_t>(payload[2]) | (static_cast<uint32_t>(payload[3]) << 8) |
+                               (static_cast<uint32_t>(payload[4]) << 16) | (static_cast<uint32_t>(payload[5]) << 24);
 
         if (magic != kHandshakeMagic)
         {
