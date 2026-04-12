@@ -338,7 +338,7 @@ TEST_F(TaskTimerTest, Histogram_InitiallyAllZero)
 
 TEST_F(TaskTimerTest, Histogram_SingleSample_CorrectBucket)
 {
-    // 200 µs → bucket 0 (range [0, 500))
+    // 200 µs → bucket 0 (range [0, 512))
     s_timerClock = 0;
     m_timer.start();
     s_timerClock = 200;
@@ -354,19 +354,19 @@ TEST_F(TaskTimerTest, Histogram_SingleSample_CorrectBucket)
 
 TEST_F(TaskTimerTest, Histogram_MultipleBuckets)
 {
-    // 200 µs → bucket 0 [0, 500)
+    // 200 µs → bucket 0 [0, 512)
     s_timerClock = 0;
     m_timer.start();
     s_timerClock = 200;
     m_timer.stop();
 
-    // 700 µs → bucket 1 [500, 1000)
+    // 700 µs → bucket 1 [512, 1024)
     s_timerClock = 1000;
     m_timer.start();
     s_timerClock = 1700;
     m_timer.stop();
 
-    // 1200 µs → bucket 2 [1000, 1500)
+    // 1200 µs → bucket 2 [1024, 1536)
     s_timerClock = 2000;
     m_timer.start();
     s_timerClock = 3200;
@@ -396,10 +396,10 @@ TEST_F(TaskTimerTest, Histogram_OverflowClampedToLastBucket)
 
 TEST_F(TaskTimerTest, Histogram_BucketBoundary)
 {
-    // Exactly at bucket boundary: 500 µs → bucket 1 [500, 1000)
+    // Exactly at bucket boundary: 512 µs → bucket 1 [512, 1024)
     s_timerClock = 0;
     m_timer.start();
-    s_timerClock = 500;
+    s_timerClock = 512;
     m_timer.stop();
 
     const uint32_t *hist = m_timer.histogram();
@@ -431,7 +431,7 @@ TEST_F(TaskTimerTest, Histogram_ResetClearsAll)
 TEST_F(TaskTimerTest, Histogram_Constants)
 {
     EXPECT_EQ(TaskTimer::histogramBucketCount(), 8u);
-    EXPECT_EQ(TaskTimer::histogramBucketWidthUs(), 500u);
+    EXPECT_EQ(TaskTimer::histogramBucketWidthUs(), 512u);
 }
 
 // ===========================================================================
@@ -462,7 +462,7 @@ TEST_F(TaskTimerTest, Percentile_FullPercentile_ReturnsMax)
 
 TEST_F(TaskTimerTest, Percentile_AllSamplesInOneBucket)
 {
-    // 10 samples, all in bucket 0 [0, 500)
+    // 10 samples, all in bucket 0 [0, 512)
     for (int i = 0; i < 10; ++i)
     {
         s_timerClock = static_cast<uint64_t>(i) * 1000;
@@ -474,12 +474,12 @@ TEST_F(TaskTimerTest, Percentile_AllSamplesInOneBucket)
     // p50 should be within bucket 0
     SputterMicros p50 = m_timer.percentileUs(0.5f);
     EXPECT_GE(p50, 0u);
-    EXPECT_LT(p50, 500u);
+    EXPECT_LT(p50, 512u);
 }
 
 TEST_F(TaskTimerTest, Percentile_SpreadAcrossBuckets)
 {
-    // 5 samples in bucket 0 [0, 500): durations of 200 µs each
+    // 5 samples in bucket 0 [0, 512): durations of 200 µs each
     for (int i = 0; i < 5; ++i)
     {
         s_timerClock = static_cast<uint64_t>(i) * 2000;
@@ -488,7 +488,7 @@ TEST_F(TaskTimerTest, Percentile_SpreadAcrossBuckets)
         m_timer.stop();
     }
 
-    // 5 samples in bucket 2 [1000, 1500): durations of 1200 µs each
+    // 5 samples in bucket 2 [1024, 1536): durations of 1200 µs each
     for (int i = 0; i < 5; ++i)
     {
         s_timerClock = 20000 + static_cast<uint64_t>(i) * 3000;
@@ -501,9 +501,9 @@ TEST_F(TaskTimerTest, Percentile_SpreadAcrossBuckets)
     SputterMicros p50 = m_timer.percentileUs(0.5f);
     // First 5 samples in bucket 0, next 5 in bucket 2
     // At p50 (rank 5), cumulative in bucket 0 = 5, so p50 should be at top of bucket 0
-    EXPECT_LE(p50, 500u);
+    EXPECT_LE(p50, 512u);
 
     // p90 — should be well into bucket 2
     SputterMicros p90 = m_timer.percentileUs(0.9f);
-    EXPECT_GE(p90, 1000u);
+    EXPECT_GE(p90, 1024u);
 }

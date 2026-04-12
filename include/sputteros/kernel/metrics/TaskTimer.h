@@ -44,7 +44,7 @@ class TaskTimer
     static constexpr std::size_t kHistogramBuckets = 8;
 
     /** @brief Width of each histogram bucket in microseconds. */
-    static constexpr SputterMicros kHistogramBucketWidthUs = 500;
+    static constexpr SputterMicros kHistogramBucketWidthUs = 512;
 
     /**
      * @brief Set the microsecond clock source for this timer.

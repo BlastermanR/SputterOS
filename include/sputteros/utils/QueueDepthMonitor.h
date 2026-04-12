@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace SputterOS
 {
@@ -35,8 +36,11 @@ class QueueDepthMonitor
         {
             m_maxDepth = currentDepth;
         }
-        m_sumDepth += currentDepth;
-        ++m_sampleCount;
+        if (m_sampleCount < std::numeric_limits<uint32_t>::max())
+        {
+            m_sumDepth += currentDepth;
+            ++m_sampleCount;
+        }
     }
 
     /**

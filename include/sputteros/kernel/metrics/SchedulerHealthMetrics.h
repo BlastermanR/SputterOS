@@ -18,6 +18,7 @@
 
 #include "sputteros/osal/SputterTime.h"
 #include <cstdint>
+#include <limits>
 
 namespace SputterOS
 {
@@ -33,12 +34,15 @@ class SchedulerHealthMetrics
      */
     void recordGap(SputterMicros gapUs)
     {
-        m_totalGapUs += gapUs;
         if (gapUs > m_maxGapUs)
         {
             m_maxGapUs = gapUs;
         }
-        ++m_tickCount;
+        if (m_tickCount < std::numeric_limits<uint32_t>::max())
+        {
+            m_totalGapUs += gapUs;
+            ++m_tickCount;
+        }
     }
 
     /**

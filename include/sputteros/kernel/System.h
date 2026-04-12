@@ -366,6 +366,11 @@ template <typename Cfg> class System
      * usage, scheduler health, and per-task timing with histograms
      * into a single `PerformanceSnapshot` value.
      *
+     * @warning The returned struct consumes ~1.2 KiB of stack (16-task,
+     *          4-core configuration). Call from a top-level or background
+     *          context, not from within a deeply nested control tick,
+     *          to avoid stack overflow on constrained targets (e.g. RP2040).
+     *
      * @return Snapshot value copy — safe to read from any context.
      */
     static PerformanceSnapshot snapshot()
