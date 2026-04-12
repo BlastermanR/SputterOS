@@ -8,7 +8,7 @@
  * @date 4/11/2026
  */
 
-#include "sputteros/kernel/SchedulerHealthMetrics.h"
+#include "sputteros/kernel/metrics/SchedulerHealthMetrics.h"
 #include <gtest/gtest.h>
 
 using namespace SputterOS;

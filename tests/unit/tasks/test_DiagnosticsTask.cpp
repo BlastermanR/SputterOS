@@ -23,7 +23,7 @@
  */
 
 #include "../mocks/KernelTestAccess.h"
-#include "sputteros/kernel/BackgroundDiagnosticsTask.h"
+#include "sputteros/kernel/tasks/BackgroundDiagnosticsTask.h"
 #include "sputteros/osal/SputterTime.h"
 #include "sputteros/osal/tasks/ITask.h"
 #include "sputteros/utils/MemoryProfiler.h"

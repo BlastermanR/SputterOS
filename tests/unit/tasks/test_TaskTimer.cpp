@@ -10,7 +10,7 @@
  * @date 4/10/2026
  */
 
-#include "sputteros/kernel/TaskTimer.h"
+#include "sputteros/kernel/metrics/TaskTimer.h"
 #include <gtest/gtest.h>
 #include <limits>
 

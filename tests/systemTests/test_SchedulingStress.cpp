@@ -22,9 +22,9 @@
 #include "SystemTestHelpers.h"
 
 #include "sputteros/builder/SystemBuilder.h"
-#include "sputteros/kernel/DeadlineTracker.h"
+#include "sputteros/kernel/metrics/DeadlineTracker.h"
 #include "sputteros/kernel/System.h"
-#include "sputteros/kernel/TaskTimer.h"
+#include "sputteros/kernel/metrics/TaskTimer.h"
 
 #include "../../unit/mocks/KernelTestAccess.h"
 

@@ -7,7 +7,7 @@
  */
 
 #include "sputteros/utils/PerformanceFormatter.h"
-#include "sputteros/kernel/TaskTimer.h"
+#include "sputteros/kernel/metrics/TaskTimer.h"
 
 namespace SputterOS
 {

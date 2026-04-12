@@ -9,7 +9,7 @@
  * @date 4/11/2026
  */
 
-#include "sputteros/kernel/CoreUtilizationTracker.h"
+#include "sputteros/kernel/metrics/CoreUtilizationTracker.h"
 #include <gtest/gtest.h>
 
 using namespace SputterOS;

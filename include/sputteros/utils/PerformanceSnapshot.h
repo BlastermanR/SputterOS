@@ -20,7 +20,7 @@
  * @date 4/11/2026
  */
 
-#include "sputteros/kernel/TaskTimer.h"
+#include "sputteros/kernel/metrics/TaskTimer.h"
 #include "sputteros/osal/SputterTime.h"
 #include <cstddef>
 #include <cstdint>

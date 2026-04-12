@@ -168,6 +168,7 @@ coverage:
 	@cd $(TEST_COV_BUILD_DIR) && $(NINJA)
 	@echo ""
 	@echo "[3/6] Running all tests (collecting profiles)..."
+	@find $(TEST_COV_BUILD_DIR) -maxdepth 1 -name 'coverage-*.profraw' -delete
 	@cd $(TEST_COV_BUILD_DIR) && \
 		LLVM_PROFILE_FILE="$(abspath $(CURDIR)/$(TEST_COV_BUILD_DIR))/coverage-%p.profraw" \
 		$(CTEST) --output-on-failure || true
@@ -189,7 +190,7 @@ coverage:
 			$$OBJS \
 			-instr-profile=coverage.profdata \
 			-ignore-filename-regex='(_deps|googletest|googlemock|tests/)' \
-		| tee coverage_report.txt | cat
+		2>&1 | grep -v 'functions have mismatched data' | tee coverage_report.txt | cat
 	@echo ""
 	@echo "Text report: $(TEST_COV_BUILD_DIR)/coverage_report.txt"
 	@echo ""
@@ -205,7 +206,8 @@ coverage:
 			-instr-profile=coverage.profdata \
 			-ignore-filename-regex='(_deps|googletest|googlemock|tests/)' \
 			-format=html \
-			-output-dir=coverage_html
+			-output-dir=coverage_html \
+		2>&1 | grep -v 'functions have mismatched data' >&2 || true
 	@echo ""
 	@echo "HTML report: $(TEST_COV_BUILD_DIR)/coverage_html/index.html"
 
