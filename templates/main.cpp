@@ -10,13 +10,15 @@
  * 2. Implement your ISafetyMonitor(s) (hardware safety checks)
  * 3. Implement your IStream (serial/USB byte stream)
  * 4. Wire everything through SystemBuilder
- * 5. Run the main loop
+ * 5. Call `System<Cfg>::run(0)` — blocks until a stop condition fires
  *
  * ### Single-Core vs Dual-Core
  * This template defaults to single-core. For dual-core (e.g., RP2040):
  * - Set `kCoreCount = 2` in your config
- * - Uncomment the dual-core sections marked with "DUAL-CORE"
- * - See exampleProjects/lifecycle/ for a working dual-core example
+ * - Implement an `IMutex` adapter for your platform (e.g. wrapping
+ *   `std::timed_mutex` or FreeRTOS `xSemaphore`)
+ * - See the DUAL-CORE section at the bottom of this file
+ * - See exampleProjects/pingpong/ for a working dual-core example
  *
  * @author YourName
  * @date YYYY/MM/DD
@@ -189,6 +191,12 @@ static SputterMicros platformGetTimeMicros()
 //  main() — Wire Everything Together
 // =========================================================================
 
+/// @brief Drain callback — writes telemetry bytes to the output stream.
+static void telemetryWrite(const uint8_t *data, std::size_t len, void *ctx)
+{
+    static_cast<IStream *>(ctx)->write(data, len);
+}
+
 int main()
 {
     // -- Instantiate User Components ----------------------------------------
@@ -199,14 +207,19 @@ int main()
     // Multiple safety monitors can be registered:
     std::array<ISafetyMonitor *, 1> monitors = {&safetyMonitor};
 
-    // -- Optional: Telemetry Logger -----------------------------------------
-    // TelemetryLogger telemetry;
-
     // -- Build the Kernel ---------------------------------------------------
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
     builder.setStream(&stream);
     builder.setClockSource(platformGetTimeMicros);
     builder.setWatchdogKick(nullptr); // Set to your platform's watchdog kick function
+
+    // Wire telemetry drain — BackgroundDiagnosticsTask calls this each tick.
+    // User tasks log to System<Cfg>::telemetryLogger(); the kernel drains
+    // automatically.
+    builder.setTelemetryDrain(telemetryWrite, &stream);
+
+    // Register stop conditions (OR'd — any one triggers run() exit):
+    // builder.addStopCondition([]() -> bool { return /* your shutdown condition */; });
 
     // Register custom user tasks (if any):
     // builder.core(0).addScheduledTask(&mySensorTask);
@@ -220,29 +233,38 @@ int main()
         return 1;
     }
 
-    // -- Initialise the Kernel ----------------------------------------------
-    System<Cfg>::init(0);
-
-    // -- Main Loop ----------------------------------------------------------
-    while (true)
-    {
-        const SputterMicros now = platformGetTimeMicros();
-
-        // Tick all tasks on core 0 (control, comms, diagnostics, user tasks)
-        System<Cfg>::tick(0, now);
-
-        // Optional: drain telemetry to output
-        // telemetry.drain(myWriteCallback);
-    }
+    // -- Run the Kernel (blocks until a stop condition fires) ---------------
+    System<Cfg>::run(0);
 
     return 0;
 }
 
 // =========================================================================
-//  DUAL-CORE TEMPLATE (uncomment for kCoreCount = 2)
+//  DUAL-CORE TEMPLATE (for kCoreCount = 2)
 // =========================================================================
 //
-// For dual-core systems (e.g., RP2040), replace main() above with:
+// For dual-core systems (e.g., RP2040), replace main() above with the
+// pattern below. You must provide a platform-specific IMutex implementation
+// to guard the shared TelemetryLogger across cores.
+//
+// Example IMutex using std::timed_mutex (host builds only):
+//
+// #include "sputteros/osal/sync/IMutex.h"
+// #include <mutex>
+//
+// class TimedMutexAdapter final : public SputterOS::IMutex
+// {
+//   public:
+//     bool lock(std::chrono::milliseconds timeout) override
+//     { return m_mtx.try_lock_for(timeout); }
+//     bool try_lock() override { return m_mtx.try_lock(); }
+//     void unlock() override { m_mtx.unlock(); }
+//   private:
+//     std::timed_mutex m_mtx;
+// };
+//
+// For FreeRTOS, wrap xSemaphoreTake/xSemaphoreGive with pdMS_TO_TICKS.
+// For Pico SDK, wrap mutex_enter_timeout_ms/mutex_exit.
 //
 // #include <thread>  // Or your platform's core-launch mechanism
 //
@@ -253,47 +275,28 @@ int main()
 //     MyStream         stream;
 //     std::array<ISafetyMonitor *, 1> monitors = {&safetyMonitor};
 //
+//     // Mutex for shared TelemetryLogger across cores
+//     TimedMutexAdapter telemetryMutex;
+//
 //     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
 //     builder.setStream(&stream);
 //     builder.setClockSource(platformGetTimeMicros);
 //     builder.setWatchdogKick(nullptr);
+//     builder.setTelemetryDrain(telemetryWrite, &stream);
+//     builder.setTelemetryMutex(&telemetryMutex);
+//     builder.addStopCondition([]() -> bool { return /* shutdown */; });
+//
+//     // Register user tasks on cores
+//     // builder.core(0).addScheduledTask(&core0Task);
+//     // builder.core(1).addScheduledTask(&core1Task);
 //
 //     const BuildResult result = builder.build();
 //     if (!result) { return 1; }
 //
-//     // -- Get sync handle for startup/shutdown barriers -------------------
-//     auto &sync = System<Cfg>::multiCoreSync();
+//     // Each core calls run() from its own thread / core-launch:
+//     std::thread core1([]() { System<Cfg>::run(1); });
+//     System<Cfg>::run(0);
+//     core1.join();
 //
-//     // -- Launch Core 1 ---------------------------------------------------
-//     // On RP2040: multicore_launch_core1(core1_entry);
-//     // On host (for testing): std::thread
-//     //
-//     // Core 1 entry function:
-//     // void core1_entry() {
-//     //     sync.setInit(1);
-//     //     System<Cfg>::init(1);
-//     //     sync.startupBarrier(1, 2000ms);
-//     //
-//     //     while (running) {
-//     //         const auto now = platformGetTimeMicros();
-//     //         System<Cfg>::watchdog().kick(1, now);
-//     //         System<Cfg>::tick(1, now);
-//     //     }
-//     //
-//     //     sync.shutdownBarrier(1, 2000ms);
-//     // }
-//
-//     // -- Core 0 (main thread) --------------------------------------------
-//     sync.setInit(0);
-//     System<Cfg>::init(0);
-//     sync.startupBarrier(0, 2000ms);  // Wait for both cores ready
-//
-//     while (true) {
-//         const auto now = platformGetTimeMicros();
-//         System<Cfg>::watchdog().kick(0, now);
-//         System<Cfg>::tick(0, now);
-//     }
-//
-//     // sync.shutdownBarrier(0, 2000ms);
 //     return 0;
 // }

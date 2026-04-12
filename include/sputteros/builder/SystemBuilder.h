@@ -308,6 +308,63 @@ template <typename Cfg> class SystemBuilder
     }
 
     // -----------------------------------------------------------------------
+    // Run-loop configuration (fluent, pre-build)
+    // -----------------------------------------------------------------------
+
+    /**
+     * @brief Register a stop condition predicate for `System<Cfg>::run()`.
+     *
+     * Multiple stop conditions are OR'd: the run loop exits when **any**
+     * registered predicate returns `true`.  Up to `System<Cfg>::kMaxStopConditions`
+     * predicates may be registered.  Excess registrations are silently ignored.
+     *
+     * @param fn Non-null function pointer evaluated each tick.
+     * @return Reference to this builder for chaining.
+     */
+    SystemBuilder &addStopCondition(typename S::StopConditionFn fn)
+    {
+        if (fn && S::s_stopConditionCount < S::kMaxStopConditions)
+        {
+            S::s_stopConditions[S::s_stopConditionCount++] = fn;
+        }
+        return *this;
+    }
+
+    /**
+     * @brief Set the telemetry drain callback for kernel-owned TelemetryLogger.
+     *
+     * When set, `BackgroundDiagnosticsTask` drains the kernel `TelemetryLogger`
+     * each tick via this callback.  The callback writes formatted log lines
+     * to whatever output sink the caller owns (USB, UART, stdout, TCP, etc.).
+     *
+     * @param writeFn Callback invoked for each formatted log line.
+     * @param ctx     Opaque context forwarded to every `writeFn` call.
+     * @return Reference to this builder for chaining.
+     */
+    SystemBuilder &setTelemetryDrain(TelemetryLogger::DrainWriteFn writeFn, void *ctx = nullptr)
+    {
+        S::s_drainFn  = writeFn;
+        S::s_drainCtx = ctx;
+        return *this;
+    }
+
+    /**
+     * @brief Set a mutex guard on the kernel-owned TelemetryLogger.
+     *
+     * Required for multi-core configurations where multiple tasks on
+     * different cores log to the same `TelemetryLogger`.  The mutex
+     * protects all `log()` and `drain()` operations.
+     *
+     * @param mutex Platform mutex (lifetime must exceed the system runtime).
+     * @return Reference to this builder for chaining.
+     */
+    SystemBuilder &setTelemetryMutex(IMutex *mutex)
+    {
+        S::s_telemetryLogger.setMutex(mutex);
+        return *this;
+    }
+
+    // -----------------------------------------------------------------------
     // Topology declaration
     // -----------------------------------------------------------------------
 
@@ -405,6 +462,12 @@ template <typename Cfg> class SystemBuilder
 
             // Register BackgroundDiagnosticsTask in the background task ring.
             S::s_backgroundTasks[S::s_backgroundTaskCount++] = &*S::s_diagsTask;
+
+            // Wire telemetry drain if a callback was registered.
+            if (S::s_drainFn)
+            {
+                S::s_diagsTask->setTelemetryDrain(&S::s_telemetryLogger, S::s_drainFn, S::s_drainCtx);
+            }
         }
 
         // --- Check that at least one core has tasks ---

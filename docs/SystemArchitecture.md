@@ -89,10 +89,19 @@ Configuration-only builder. Holds user-provided kernel dependencies (`IUserAppli
 1. SystemBuilder<Cfg> builder(&app, monitors, count)   — construct
 2. builder.setStream(&stream)                          — inject for CommsTask
 3. builder.setWatchdogKick(kickFn)                     — inject for DiagnosticsTask
-4. builder.core(0).addTask(&customTask)                — optional user tasks
-5. auto result = builder.build()                       — validate + populate System
-6. System<Cfg>::init(coreId)                           — initialise tasks
-7. System<Cfg>::tick(coreId, now)                      — runtime loop
+4. builder.setTelemetryDrain(writeFn, ctx)             — wire telemetry output
+5. builder.setTelemetryMutex(&mutex)                   — (multi-core) guard shared logger
+6. builder.addStopCondition(predicate)                 — register exit conditions
+7. builder.core(0).addScheduledTask(&customTask)       — optional user tasks
+8. auto result = builder.build()                       — validate + populate System
+9. System<Cfg>::run(coreId)                            — blocking run loop
+```
+
+For multi-core builds, each core calls `run()` from its own thread:
+```cpp
+std::thread core1([]() { System<Cfg>::run(1); });
+System<Cfg>::run(0);
+core1.join();
 ```
 
 ### `CoreBuilder<Cfg>`
@@ -152,13 +161,21 @@ When `IUserApplication` is non-null:
 | `s_allTaskCount` | `std::size_t` | Number of valid entries in `s_allTasks[]` |
 | `s_built` | `bool` | Guard flag set by `build()` |
 | `s_lastTime[]` | `SputterMicros[kCoreCount]` | Last observed tick time per core for rollover detection |
+| `s_telemetryLogger` | `TelemetryLogger` | Kernel-owned shared telemetry logger |
+| `s_stopConditions[]` | `StopConditionFn[8]` | User-registered run-loop exit predicates (OR'd) |
+| `s_stopConditionCount` | `std::size_t` | Number of registered stop conditions |
+| `s_drainFn` | `TelemetryLogger::DrainWriteFn` | Telemetry drain write callback |
+| `s_drainCtx` | `void*` | Opaque context for drain callback |
+| `s_coreInitialized[]` | `bool[kCoreCount]` | Tracks whether `init()` has been called per core |
 
 ### Public Static API
 
 | Method | Description |
 |---|---|
-| `init(coreId)` | Call `ITask::init()` on every task registered to this core |
+| `run(coreId)` | **Blocking run loop.** Internalises init, startup barrier, tick loop, shutdown transitions, and shutdown barrier. Exits when any registered stop condition fires or the kernel leaves an active state. |
+| `init(coreId)` | Call `ITask::init()` on every task registered to this core. Called automatically by `run()` if not already done. |
 | `tick(coreId, systemTime)` | Tick every task on this core; instruments with `TaskTimer::start()`/`stop()`. Detects timer rollover (logs `TIMER_ROLLOVER` fault). |
+| `telemetryLogger()` | Access the kernel-owned `TelemetryLogger` (shared across cores when mutex is set). |
 | `commandQueue()` | Access the lock-free command queue |
 | `watchdog()` | Access the inter-core watchdog |
 | `multiCoreSync()` | Access lifecycle barriers (or no-op stub) |
@@ -166,6 +183,7 @@ When `IUserApplication` is non-null:
 | `errorLogger()` | Access the kernel-owned error logger |
 | `memProfiler()` | Access the kernel-owned memory profiler |
 | `isBuilt()` | Query whether `build()` has been called |
+| `kernelState()` | Current lifecycle state (`UNCONFIGURED` through `SHUTDOWN`) |
 | `taskCount(coreId)` | Number of tasks registered on a core |
 | `task(coreId, idx)` | Get a task pointer by core and index |
 

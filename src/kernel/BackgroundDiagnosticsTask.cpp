@@ -9,6 +9,7 @@
 #include "sputteros/kernel/tasks/BackgroundDiagnosticsTask.h"
 #include "sputteros/osal/tasks/ITask.h"
 #include "sputteros/utils/logging/ErrorLogger.h"
+#include "sputteros/utils/logging/TelemetryLogger.h"
 
 namespace SputterOS
 {
@@ -31,6 +32,14 @@ void BackgroundDiagnosticsTask::setMonitoredTasks(ITask *const *tasks, std::size
     {
         m_monitoredTasks[i] = tasks[i];
     }
+}
+
+void BackgroundDiagnosticsTask::setTelemetryDrain(TelemetryLogger *logger, TelemetryLogger::DrainWriteFn writeFn,
+                                                  void *ctx)
+{
+    m_telemetryLogger = logger;
+    m_drainFn         = writeFn;
+    m_drainCtx        = ctx;
 }
 
 void BackgroundDiagnosticsTask::init()
@@ -86,6 +95,12 @@ void BackgroundDiagnosticsTask::tick(SputterMicros /*systemTimeMicros*/)
         m_tickCount = 0;
         m_logger.log(ErrorLogger::ErrorCode::WATCHDOG_KICK, SputterMicros(0),
                      static_cast<float>(m_memProfiler.getPeakHeapUsedBytes()));
+    }
+
+    // Drain telemetry logger if wired
+    if (m_telemetryLogger && m_drainFn)
+    {
+        m_telemetryLogger->drain(m_drainFn, m_drainCtx);
     }
 }
 

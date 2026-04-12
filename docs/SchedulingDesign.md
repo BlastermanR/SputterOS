@@ -23,7 +23,11 @@ Documents the implemented scheduling model: task type hierarchy, dispatch algori
 
 ## 1. Overview
 
-SputterOS dispatches tasks through a **flat-loop cooperative scheduler** driven from the platform's main loop. Each call to `System<Cfg>::tick(coreId, now)` iterates all tasks registered on that core and calls `task->tick(now)` on each in declaration order. Timer instrumentation wraps every dispatch for post-hoc observability.
+SputterOS dispatches tasks through a **flat-loop cooperative scheduler**. The primary entry point is `System<Cfg>::run(coreId)`, which internalises the full lifecycle: init → startup barrier → tick loop → shutdown. Internally, each iteration calls `System<Cfg>::tick(coreId, now)` which iterates all tasks registered on that core and calls `task->tick(now)` on each in declaration order. Timer instrumentation wraps every dispatch for post-hoc observability.
+
+The `run()` method exits when any user-registered stop condition fires (`StopConditionFn` — registered via `SystemBuilder::addStopCondition()`) or the kernel leaves an active state. Multiple stop conditions are OR'd.
+
+For advanced use, `tick()` remains public for test harnesses and custom run loops, but production code should use `run()`.
 
 Scheduling behaviour — *which* task does work on a given tick — is **task-internal**. Each `IScheduledTask` subclass implements its own period check (`now - m_lastTick >= periodUs`) and returns early when the period has not elapsed. The kernel loop is oblivious to whether a task did real work or returned immediately; it always calls `tick()` and records the duration.
 
@@ -149,18 +153,18 @@ static void tick(std::size_t coreId, SputterMicros now)
 
 ```mermaid
 sequenceDiagram
-    participant Main as main() loop
+    participant Run as System&lt;Cfg&gt;::run()
     participant Sys as System&lt;Cfg&gt;::tick()
     participant SCT as ScheduledControlTask
     participant SCM as ScheduledCommsTask
     participant BDT as BackgroundDiagnosticsTask
     participant User as User IScheduledTask(s)
 
-    Main->>Sys: tick(0, now)
+    Run->>Sys: tick(0, now)
     Sys->>SCT: timer.start() → tick(now) → timer.stop()
     SCT->>SCT: evaluateSafety() → processCommands() → app.tick()
     Sys->>BDT: timer.start() → tick(now) → timer.stop()
-    BDT->>BDT: watchdogKick(), scan timers
+    BDT->>BDT: watchdogKick(), scan timers, drain telemetry
     Sys->>User: timer.start() → tick(now) → timer.stop()
     User->>User: rate-limit check → do work or return
 ```
@@ -387,6 +391,15 @@ builder.setStream(&stream)
        .setWatchdogKick(kickFn)
        .setClockSource(clockFn);
 
+// Wire telemetry drain (BackgroundDiagnosticsTask drains each tick)
+builder.setTelemetryDrain(writeFn, ctx);
+
+// Multi-core: guard shared TelemetryLogger
+builder.setTelemetryMutex(&mutex);
+
+// Register stop conditions (OR'd — any one triggers run() exit)
+builder.addStopCondition([]() -> bool { return /* condition */; });
+
 // Scheduled tasks on a specific core
 builder.core(0).addScheduledTask(&myTask);
 
@@ -395,6 +408,9 @@ builder.addBackgroundTask(&myBgTask);
 
 // Validate + populate System<Cfg>
 BuildResult result = builder.build();
+
+// Run the kernel (blocks until stop condition fires)
+System<Cfg>::run(0);
 ```
 
 ### 10.1 Build-time Validation
@@ -446,6 +462,7 @@ New optional config fields added to the `Cfg` struct contract, with SFINAE extra
 | `CfgMinSchedulePeriodUs` | `test_ConfigTraits.cpp` | Default and override values |
 | `CfgStrictWCET` | `test_ConfigTraits.cpp` | Default and override |
 | `CfgIsrContextBudgetUs` | `test_ConfigTraits.cpp` | Default and override |
+| `SystemRun` | `test_SystemRun.cpp` | `run()` exit on stop condition, OR'd conditions, init delegation, telemetry drain wiring, logger accessor, stop condition overflow |
 
 ### System Tests
 
