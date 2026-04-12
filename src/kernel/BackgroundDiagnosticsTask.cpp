@@ -6,7 +6,7 @@
  * @date 4/8/2026
  */
 
-#include "sputteros/kernel/BackgroundDiagnosticsTask.h"
+#include "sputteros/kernel/tasks/BackgroundDiagnosticsTask.h"
 #include "sputteros/osal/tasks/ITask.h"
 #include "sputteros/utils/logging/ErrorLogger.h"
 

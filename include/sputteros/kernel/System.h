@@ -44,12 +44,12 @@
  */
 
 #include "sputteros/ConfigTraits.h"
-#include "sputteros/kernel/BackgroundDiagnosticsTask.h"
-#include "sputteros/kernel/CoreUtilizationTracker.h"
+#include "sputteros/kernel/tasks/BackgroundDiagnosticsTask.h"
+#include "sputteros/kernel/metrics/CoreUtilizationTracker.h"
 #include "sputteros/kernel/KernelState.h"
-#include "sputteros/kernel/SchedulerHealthMetrics.h"
-#include "sputteros/kernel/ScheduledCommsTask.h"
-#include "sputteros/kernel/ScheduledControlTask.h"
+#include "sputteros/kernel/metrics/SchedulerHealthMetrics.h"
+#include "sputteros/kernel/tasks/ScheduledCommsTask.h"
+#include "sputteros/kernel/tasks/ScheduledControlTask.h"
 #include "sputteros/osal/sync/LockFreeQueue.h"
 #include "sputteros/osal/sync/MultiCoreSync.h"
 #include "sputteros/osal/sync/WatchdogSync.h"
