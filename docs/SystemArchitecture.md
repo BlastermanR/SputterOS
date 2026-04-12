@@ -198,10 +198,22 @@ flowchart LR
 
 ### `CommsTask<Cfg>` — Serial Command Reception (`IAsyncTask`)
 
-Runs asynchronously. Each `tick()`:
+Runs asynchronously. Supports two modes: TEXT (legacy ASCII) and FRAMED (COBS binary). See [CommsProtocol.md](CommsProtocol.md) for full protocol specification.
+
+**TEXT mode** — Each `tick()`:
 
 1. `CLI<Cfg>::tick()` — drain up to 64 bytes from `IStreamReader`, feed each to `CommandParser<Cfg>`
 2. Complete commands → `ICommandProducer::try_push()`. Success → `ACK <cmdId>\n`. Queue full → `NACK <cmdId> <targetDevice> <value>\n`
+
+**FRAMED mode** — Each `tick()`:
+
+1. `CLI<Cfg>::tick()` — feed bytes to `FrameDecoder`, dispatch via `ProtocolRouter` to `IProtocolHandler` callbacks
+2. COMMAND frames → `ICommandProducer::try_push()`. Success → framed ACK. Queue full → framed NACK
+3. HANDSHAKE_REQ → validates magic, sends HANDSHAKE_RESP
+4. EXIT_HANDSHAKE → sends ACK, reverts to TEXT mode
+5. METRICS_REQ → sends METRICS_RESP with performance snapshot
+
+`ScheduledCommsTask<Cfg>` implements `IProtocolHandler<Cfg>` to handle all protocol callbacks.
 
 **Dependencies:** `IStreamReader*`, `ICommandProducer<Cfg>*`
 

@@ -107,14 +107,14 @@ formalTest:
 	@echo "===================================="
 	@echo "SputterOS Formal Test Generation"
 	@echo "===================================="
-	@bash Tools/generate_formal_test_results.sh "$(CMAKE)" "$(NINJA)" "$(CTEST)"
+	@bash tools/scripts/generate_formal_test_results.sh "$(CMAKE)" "$(NINJA)" "$(CTEST)"
 
 # Memory usage: Runs the memory usage script against the Pico build executable.
 # Run 'make pico_build' instead of 'make testBuild' for an ELF target.
 .PHONY: memoryUsage
 memoryUsage:
 	@echo "memoryUsage requires a Pico ELF target. Run 'make pico_build' first."
-	@echo "Example: python Tools/pico_memory_usage.py <path/to/target.elf>"
+	@echo "Example: python tools/scripts/pico_memory_usage.py <path/to/target.elf>"
 
 # ────────────────────────────────────────────────────────────────────────────
 # CODE COVERAGE (LLVM source-based via llvm-cov)

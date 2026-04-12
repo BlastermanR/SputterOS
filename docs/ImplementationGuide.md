@@ -522,7 +522,11 @@ A hardware ISR fires and calls `ISputterDevice::executeFastFault()` to cut power
 
 ## Serial Command Protocol
 
-`CommsTask<Cfg>` reads ASCII bytes from `IStream` via `CLI<Cfg>` and parses into `Cfg::Command` packets.
+`CommsTask<Cfg>` reads bytes from `IStream` via `CLI<Cfg>` and supports two modes: **TEXT** (legacy ASCII) and **FRAMED** (COBS binary). See [CommsProtocol.md](CommsProtocol.md) for the full protocol specification.
+
+### TEXT Mode (Default)
+
+`CLI<Cfg>` parses ASCII bytes into `Cfg::Command` packets.
 
 ### Wire Format
 
@@ -552,6 +556,37 @@ A hardware ISR fires and calls `ISputterDevice::executeFastFault()` to cut power
 
 → 1 0 0.0\n        (ABORT_PROCESS)
 ← ACK 1\n          (accepted)
+```
+
+### FRAMED Mode (Binary Protocol)
+
+A host tool can negotiate FRAMED mode via a COBS-encoded handshake. In FRAMED mode, all messages use CRC16-protected binary frames.
+
+```
+→ [0x00 sync][COBS(HANDSHAKE_REQ)][0x00]
+← [COBS(HANDSHAKE_RESP)][0x00]
+
+→ [COBS(COMMAND: SET_POWER dev=1 val=50.0)][0x00]
+← [COBS(ACK: cmd=3)][0x00]
+
+→ [COBS(EXIT_HANDSHAKE)][0x00]
+← [COBS(ACK)][0x00]       (reverts to TEXT mode)
+```
+
+To customize the maximum frame payload size, add `kMaxFramePayload` to your config struct:
+
+```cpp
+struct MyCfg {
+    // ... existing fields ...
+    static constexpr std::size_t kMaxFramePayload = 512;  // default: 256
+};
+```
+
+The Python CLI tool `sputterctl` provides a ready-made host implementation. Install from `tools/cli/`:
+
+```bash
+pip install -e ".[dev]"
+sputterctl repl --port COM3
 ```
 
 ---

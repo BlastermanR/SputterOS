@@ -1,0 +1,6 @@
+pyserial>=3.5
+click>=8.0
+
+[dev]
+pytest>=7.0
+pytest-mock>=3.10

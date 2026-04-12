@@ -270,6 +270,25 @@ struct MyProjectConfig
     // static constexpr std::size_t kMaxLineLen = 64;
 
     // =====================================================================
+    //  OPTIONAL — Protocol / Framing
+    // =====================================================================
+
+    /**
+     * @brief Maximum payload size for COBS-framed protocol messages (bytes).
+     *
+     * Controls the buffer sizes in FrameDecoder, FrameEncoder, and CLI.
+     * Must be large enough to carry a serialized PerformanceSnapshot if
+     * you want full metrics over the framed protocol.
+     *
+     * Trade-offs:
+     * - Smaller: less static RAM per CLI instance.
+     * - Larger: can carry bigger payloads (full PerformanceSnapshot ~1 KiB).
+     *
+     * Default: 256
+     */
+    // static constexpr std::size_t kMaxFramePayload = 256;
+
+    // =====================================================================
     //  OPTIONAL — ISR Configuration
     // =====================================================================
 
