@@ -326,15 +326,45 @@ struct DeadlineTracker {
 
 Every `ITask` embeds a `Kernel::TaskTimer`. `System::tick()` calls `timer().start()` before and `timer().stop()` after every `task->tick()` — including early-return ticks. The `TaskTimer` maintains:
 
-| Metric | Accessor |
-|--------|---------|
-| Last tick duration | `lastDuration()` |
-| Max observed duration | `maxDuration()` |
-| Rolling average duration | `getAverageDurationUs()` |
-| Sample count | `sampleCount()` |
-| Over-budget flag | `isOverBudget(budgetUs)` |
+| Metric | Accessor | Notes |
+|--------|---------|-------|
+| Last tick duration | `lastDuration()` | µs |
+| Minimum tick duration | `minDuration()` | µs; initialized to `UINT64_MAX` |
+| Maximum tick duration | `maxDuration()` | µs |
+| Rolling average duration | `getAverageDurationUs()` | Returns 0 if no samples |
+| Sample count | `sampleCount()` | `uint32_t`; wraps after ~4.3 B ticks |
+| Over-budget flag | `isOverBudget(budgetUs)` | Compares `lastDuration()` to budget |
+| Overrun count | `overrunCount()` | Incremented by `BackgroundDiagnosticsTask` |
+| Deadline-miss count | `deadlineMissCount()` | Incremented for period violations |
+| Duration histogram | `histogram()` | 8 buckets × 512 µs — see below |
+| Approximate percentile | `percentileUs(p)` | Linear interpolation within bucket |
 
 `BackgroundDiagnosticsTask` reads these metrics to detect WCET violations. In tests, `task.timer().sampleCount() > 0` confirms that the task was dispatched at all.
+
+### 9.1 Histogram Distribution
+
+Each `stop()` call places the elapsed duration into one of 8 fixed-width buckets:
+
+| Bucket | Range |
+|--------|-------|
+| 0 | [0, 512) µs |
+| 1 | [512, 1024) µs |
+| 2 | [1024, 1536) µs |
+| 3 | [1536, 2048) µs |
+| 4 | [2048, 2560) µs |
+| 5 | [2560, 3072) µs |
+| 6 | [3072, 3584) µs |
+| 7 | ≥ 3584 µs (overflow catch-all) |
+
+The bucket width of **512 µs** (2⁹) ensures the index computation `elapsed >> 9` is a single right-shift on Cortex-M0+ rather than a software division.
+
+`percentileUs(float p)` walks the histogram and linearly interpolates within the containing bucket. It is an off-hot-path, on-demand operation — not called per tick.
+
+### 9.2 Performance Snapshot
+
+`System<Cfg>::snapshot()` aggregates all per-task timers together with per-core utilization (`CoreUtilizationTracker`), scheduler health (`SchedulerHealthMetrics`), queue depth (`QueueDepthMonitor`), and memory profiling into a `PerformanceSnapshot` POD value. The struct is ~1.2 KiB on the stack for a 16-task, 4-core configuration — call `snapshot()` from a background or top-level context rather than from inside a time-critical tick.
+
+`PerformanceFormatter::formatKeyValue()` and `formatCSV()` convert a snapshot to text in a caller-supplied `char` buffer using integer arithmetic (zero heap, no `printf`).
 
 ---
 
