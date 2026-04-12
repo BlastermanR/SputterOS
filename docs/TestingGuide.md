@@ -27,6 +27,7 @@ SputterOS uses host-native validation so the library can be exercised on a deskt
 | **Example Projects** | Standalone executable smoke tests under `exampleProjects/` | `make exampleProjects` | Separate build tree |
 | **Formal Report** | Regenerates `FormalTestResults.md` and `FormalTestResults.txt` | `make formalTest` | Summarises the latest run |
 | **Coverage** | LLVM source-based coverage for host-native tests | `make coverage` | Generates text and HTML reports |
+| **Python CLI** | Protocol, transport, and client tests for `sputterctl` | `cd tools/cli && python -m pytest` | Requires `pip install -e ".[dev]"` |
 
 The latest generated [Formal Test Results](../FormalTestResults.md) file in this repository contains the exact counts from the most recent full run.
 
@@ -269,6 +270,33 @@ Artifacts:
 2. Add a `CMakeLists.txt` that produces an executable and registers it with `add_test()`.
 3. Add `add_subdirectory(<name>)` to `exampleProjects/CMakeLists.txt`.
 4. Run `make exampleProjects`.
+
+---
+
+## Python CLI Tests
+
+The `sputterctl` Python CLI package at `tools/cli/` has its own pytest suite covering COBS encoding, protocol frame roundtrips, transport abstraction, and client handshake lifecycle.
+
+### Running
+
+```bash
+cd tools/cli
+pip install -e ".[dev]"     # First time only
+python -m pytest tests/ -v
+```
+
+### Test Files
+
+| File | Coverage |
+|---|---|
+| `test_cobs.py` | COBS roundtrip, encode edge cases, decode error handling |
+| `test_protocol.py` | CRC16, frame encode/decode roundtrip, payload serializers/deserializers |
+| `test_transport.py` | Abstract transport, TCP echo loopback, connect refused |
+| `test_client.py` | Handshake lifecycle, command ACK, metrics request, heartbeat |
+
+### Cross-Validation
+
+The Python COBS and CRC16 implementations mirror the C++ `CobsCodec.h` and `Crc16.h`. Both use the same test vectors (all-zeros, trailing-zero, 254/255 byte runs) to ensure interoperability.
 
 ---
 

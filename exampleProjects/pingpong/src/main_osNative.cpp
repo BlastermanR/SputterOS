@@ -78,6 +78,7 @@
 #include "PingTask.h"
 #include "PongTask.h"
 #include "SharedCounter.h"
+#include "TcpStreamServer.h"
 
 #include "sputteros/builder/SystemBuilder.h"
 #include "sputteros/kernel/System.h"
@@ -88,19 +89,32 @@
 #include <array>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <thread>
 
 /// @brief Drain callback — writes telemetry text to stdout.
 static void stdoutWrite(const uint8_t *data, std::size_t len, void * /*ctx*/) { std::fwrite(data, 1, len, stdout); }
 
-int main()
+int main(int argc, char *argv[])
 {
     using Cfg = PingPong::PingPongConfig;
     using namespace SputterOS;
     using ms = std::chrono::milliseconds;
 
+    // Parse flags: --forever, --tcp-port <N>
+    bool     forever = false;
+    uint16_t tcpPort = 0;
+    for (int i = 1; i < argc; ++i)
+    {
+        if (std::strcmp(argv[i], "--forever") == 0)
+            forever = true;
+        else if (std::strcmp(argv[i], "--tcp-port") == 0 && i + 1 < argc)
+            tcpPort = static_cast<uint16_t>(std::atoi(argv[++i]));
+    }
+
     // -- HAL stubs ----------------------------------------------------------
-    PingPong::StdoutStreamReader      stream;
+    PingPong::StdoutStreamReader      stdoutStream;
+    ExamplesCommon::TcpStreamServer   tcpStream(tcpPort);
     PingPong::AlwaysSafeSafetyMonitor safetyMonitor;
     std::array<ISafetyMonitor *, 1>   monitors = {&safetyMonitor};
 
@@ -118,9 +132,16 @@ int main()
     PingPong::PingTask pingTask(pingTelemetry); // Core 0
     PingPong::PongTask pongTask(pongTelemetry); // Core 1
 
+    // -- Select active stream (TCP or stdout) -------------------------------
+    SputterOS::IStream *activeStream = (tcpPort > 0) ? static_cast<SputterOS::IStream *>(&tcpStream)
+                                                     : static_cast<SputterOS::IStream *>(&stdoutStream);
+    if (tcpPort > 0 && !tcpStream.startAccept())
+        return 1;
+
     // -- Build the kernel ---------------------------------------------------
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
-    builder.setStream(&stream);
+    builder.setStream(activeStream);
+    builder.setClockSource(PingPong::platformGetTimeMicros);
     builder.setWatchdogKick(nullptr);
 
     // Register user tasks on the appropriate cores.
@@ -145,7 +166,7 @@ int main()
     // The lambda captures by reference; it is safe because main() waits
     // for the thread to join before any captured objects are destroyed.
     std::thread core1Thread(
-        [&sync, &pongTelemetry]()
+        [&sync, &pongTelemetry, forever]()
         {
             // Signal that Core 1 has started local initialisation.
             sync.setInit(1);
@@ -159,8 +180,9 @@ int main()
                 return; // startupBarrier sets ERROR state on timeout
             }
 
-            // Core 1 tick loop — runs until PingTask clears g_running.
-            while (PingPong::g_running.load(std::memory_order_acquire))
+            // Core 1 tick loop — runs until PingTask clears g_running,
+            // or indefinitely when --forever is set.
+            while (forever || PingPong::g_running.load(std::memory_order_acquire))
             {
                 const SputterMicros now = PingPong::platformGetTimeMicros();
                 System<Cfg>::watchdog().kick(1, now);
@@ -170,7 +192,10 @@ int main()
             }
 
             // Orderly shutdown — signal and wait for Core 0.
-            sync.shutdownBarrier(1, ms{2000});
+            if (!forever)
+            {
+                sync.shutdownBarrier(1, ms{2000});
+            }
         });
 
     // -- Core 0 startup sequence --------------------------------------------
@@ -189,7 +214,7 @@ int main()
     }
 
     // -- Core 0 tick loop ---------------------------------------------------
-    while (PingPong::g_running.load(std::memory_order_acquire))
+    while (forever || PingPong::g_running.load(std::memory_order_acquire))
     {
         const SputterMicros now = PingPong::platformGetTimeMicros();
         System<Cfg>::watchdog().kick(0, now);
@@ -199,7 +224,10 @@ int main()
     }
 
     // -- Core 0 orderly shutdown --------------------------------------------
-    sync.shutdownBarrier(0, ms{2000});
+    if (!forever)
+    {
+        sync.shutdownBarrier(0, ms{2000});
+    }
     core1Thread.join();
 
     return 0;

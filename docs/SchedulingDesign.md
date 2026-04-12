@@ -115,7 +115,11 @@ static void tick(std::size_t coreId, SputterMicros now)
         s_errorLogger.log(ErrorCode::TIMER_ROLLOVER, now, 0.0f);
     s_lastTime[coreId] = now;
 
-    // 3. Flat task loop — all tasks on this core, in declaration order
+    // 3. Record tick start for utilization (tick-to-tick wall time)
+    s_utilTracker[coreId].recordTickStart(now);
+
+    // 4. Flat task loop — all tasks on this core, in declaration order
+    SputterMicros busyAccum = 0;
     for (std::size_t t = 0; t < s_cores[coreId].taskCount; ++t)
     {
         ITask *tsk = s_cores[coreId].tasks[t];
@@ -124,8 +128,12 @@ static void tick(std::size_t coreId, SputterMicros now)
             tsk->timer().start();
             tsk->tick(now);
             tsk->timer().stop();
+            busyAccum += tsk->timer().lastDuration();
         }
     }
+
+    // 5. Record busy time; utilization = busyAccum / wall-time
+    s_utilTracker[coreId].recordTickEnd(busyAccum);
 }
 ```
 
@@ -363,6 +371,8 @@ The bucket width of **512 µs** (2⁹) ensures the index computation `elapsed >>
 ### 9.2 Performance Snapshot
 
 `System<Cfg>::snapshot()` aggregates all per-task timers together with per-core utilization (`CoreUtilizationTracker`), scheduler health (`SchedulerHealthMetrics`), queue depth (`QueueDepthMonitor`), and memory profiling into a `PerformanceSnapshot` POD value. The struct is ~1.2 KiB on the stack for a 16-task, 4-core configuration — call `snapshot()` from a background or top-level context rather than from inside a time-critical tick.
+
+`CoreUtilizationTracker` reports **true CPU load**: wall time is the interval between consecutive `recordTickStart()` calls, so it includes any sleep or idle gap between ticks. This gives an accurate measure of how much of the CPU's available time tasks actually consume (e.g., a 5 µs dispatch over a 1 ms tick period → ~0.5% utilization).
 
 `PerformanceFormatter::formatKeyValue()` and `formatCSV()` convert a snapshot to text in a caller-supplied `char` buffer using integer arithmetic (zero heap, no `printf`).
 

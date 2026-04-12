@@ -320,6 +320,7 @@ TEST(SystemBuilderDep, Build_PropagatesClockSource)
     ON_CALL(monitor, isSafe()).WillByDefault(Return(true));
     std::array<ISafetyMonitor *, 1> monitors = {&monitor};
 
+    g_clockValue = 42000; // epoch captured at build time
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
     builder.setStream(&stream);
     builder.setClockSource(testClockSource);
@@ -328,7 +329,11 @@ TEST(SystemBuilderDep, Build_PropagatesClockSource)
     ASSERT_TRUE(result.ok) << result.error;
 
     EXPECT_TRUE(System<Cfg>::timer().hasClockSource());
-    EXPECT_EQ(System<Cfg>::timer().nowMicros(), 42000u);
+
+    // After epoch subtraction, now == 0 since clock hasn't advanced.
+    // Advance the clock and verify the timer tracks elapsed time.
+    g_clockValue = 42000 + 5000;
+    EXPECT_EQ(System<Cfg>::timer().nowMicros(), 5000u);
 }
 
 TEST(SystemBuilderDep, Build_ErrorLoggerAccessiblePreAndPostBuild)

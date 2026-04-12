@@ -65,18 +65,21 @@ TEST(SystemTimerTest, NowMicros_NoClockSource_ReturnsZero)
 
 TEST(SystemTimerTest, NowMicros_ReturnsInjectedValue)
 {
-    SystemTimer timer(fakeClockFixed);
-    EXPECT_EQ(timer.nowMicros(), 1000000u);
+    // Use a dynamic clock: epoch captured at construction, then advance.
+    s_fakeTime = 1000;
+    SystemTimer timer(fakeClockDynamic); // epoch = 1000
+    s_fakeTime = 2000;
+    EXPECT_EQ(timer.nowMicros(), 1000u); // 2000 - 1000
 }
 
 TEST(SystemTimerTest, NowMicros_TracksDynamicClock)
 {
     s_fakeTime = 500;
-    SystemTimer timer(fakeClockDynamic);
-    EXPECT_EQ(timer.nowMicros(), 500u);
+    SystemTimer timer(fakeClockDynamic); // epoch = 500
+    EXPECT_EQ(timer.nowMicros(), 0u);    // 500 - 500
 
     s_fakeTime = 999999;
-    EXPECT_EQ(timer.nowMicros(), 999999u);
+    EXPECT_EQ(timer.nowMicros(), 999499u); // 999999 - 500
 }
 
 // ===========================================================================
@@ -85,11 +88,14 @@ TEST(SystemTimerTest, NowMicros_TracksDynamicClock)
 
 TEST(SystemTimerTest, SetClockSource_ReplacesExisting)
 {
-    SystemTimer timer(fakeClockZero);
-    EXPECT_EQ(timer.nowMicros(), 0u);
+    s_fakeTime = 100;
+    SystemTimer timer(fakeClockDynamic); // epoch = 100
+    EXPECT_EQ(timer.nowMicros(), 0u);    // 100 - 100
 
-    timer.setClockSource(fakeClockFixed);
-    EXPECT_EQ(timer.nowMicros(), 1000000u);
+    s_fakeTime = 5000;
+    timer.setClockSource(fakeClockDynamic); // new epoch = 5000
+    s_fakeTime = 8000;
+    EXPECT_EQ(timer.nowMicros(), 3000u); // 8000 - 5000
 }
 
 // ===========================================================================
@@ -98,22 +104,28 @@ TEST(SystemTimerTest, SetClockSource_ReplacesExisting)
 
 TEST(SystemTimerTest, Microseconds_ConvertsCorrectly)
 {
-    SystemTimer timer(fakeClockFixed); // 1,000,000 µs
-    auto        us = timer.microseconds();
+    s_fakeTime = 0;
+    SystemTimer timer(fakeClockDynamic); // epoch = 0
+    s_fakeTime = 1000000;                // 1,000,000 µs elapsed
+    auto us    = timer.microseconds();
     EXPECT_DOUBLE_EQ(us.value(), 1000000.0);
 }
 
 TEST(SystemTimerTest, Milliseconds_ConvertsCorrectly)
 {
-    SystemTimer timer(fakeClockFixed); // 1,000,000 µs = 1000 ms
-    auto        ms = timer.milliseconds();
+    s_fakeTime = 0;
+    SystemTimer timer(fakeClockDynamic); // epoch = 0
+    s_fakeTime = 1000000;                // 1,000,000 µs = 1000 ms
+    auto ms    = timer.milliseconds();
     EXPECT_DOUBLE_EQ(ms.value(), 1000.0);
 }
 
 TEST(SystemTimerTest, Seconds_ConvertsCorrectly)
 {
-    SystemTimer timer(fakeClockFixed); // 1,000,000 µs = 1.0 s
-    auto        s = timer.seconds();
+    s_fakeTime = 0;
+    SystemTimer timer(fakeClockDynamic); // epoch = 0
+    s_fakeTime = 1000000;                // 1,000,000 µs = 1.0 s
+    auto s     = timer.seconds();
     EXPECT_DOUBLE_EQ(s.value(), 1.0);
 }
 

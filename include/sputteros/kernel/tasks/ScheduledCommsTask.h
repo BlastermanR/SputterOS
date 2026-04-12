@@ -3,6 +3,9 @@
 
 #include "sputteros/ConfigTraits.h"
 #include "sputteros/comms/CLI.h"
+#include "sputteros/comms/protocol/IProtocolHandler.h"
+#include "sputteros/comms/protocol/MessageType.h"
+#include "sputteros/comms/protocol/ResponseSerializer.h"
 #include "sputteros/hal/devices/IStream.h"
 #include "sputteros/kernel/KernelConstructTag.h"
 #include "sputteros/osal/sync/ICommandProducer.h"
@@ -10,21 +13,28 @@
 
 /**
  * @file ScheduledCommsTask.h
- * @brief Kernel communications task — stream reader to command queue bridge.
+ * @brief Dual-mode kernel communications task — TEXT + FRAMED protocol bridge.
  *
- * Reads raw bytes from an `IStreamReader` (USB CDC, UART, or network),
- * feeds them through a `CommandParser`, and pushes validated command
- * packets into the shared `ICommandProducer` for the `ScheduledControlTask`
- * to consume via its `ICommandConsumer` view.
+ * In TEXT mode: reads ASCII lines from an `IStream`, feeds them through
+ * a `CommandParser`, pushes validated commands into the `ICommandProducer`,
+ * and sends ACK/NACK ASCII responses. This is backward-compatible behavior.
  *
- * Also responsible for writing telemetry responses back to the host via
- * the same `IStream` write path.
+ * In FRAMED mode: acts as `IProtocolHandler<Cfg>`, receiving dispatched
+ * protocol messages from the `CLI` / `ProtocolRouter`. Commands are queued
+ * with COBS-framed ACK/NACK responses. Metrics requests capture a
+ * `PerformanceSnapshot` and send a METRICS_RESP frame. EXIT_HANDSHAKE
+ * reverts the CLI to TEXT mode.
+ *
+ * The handshake mode switch is detected by the `CLI` (0x00 byte in TEXT
+ * stream triggers a probe). This task provides the protocol handler that
+ * the CLI dispatches to.
  *
  * @note This is a kernel task. Its constructor requires a `KernelConstructTag` —
  *       only `SystemBuilder` may instantiate it. The instance is owned by
  *       `System<Cfg>` as an `inline static` member.
- * @note Inherits `IScheduledTask` - pinned to Core 1 in multi-core configs.
- * @note Sends `NACK <cmd_id> <sub_id> <value>` on queue back-pressure.
+ * @note Inherits `IScheduledTask` — pinned to Core 1 in multi-core configs.
+ * @note Sends `NACK <cmd_id> <sub_id> <value>` on queue back-pressure (TEXT)
+ *       or framed NACK (FRAMED).
  *
  * @tparam Cfg Configuration struct providing `Command`, `CmdID`, etc.
  *
@@ -41,9 +51,17 @@ namespace Kernel
 
 struct KernelTestAccess;
 
-template <typename Cfg> class ScheduledCommsTask : public IScheduledTask
+template <typename Cfg> class ScheduledCommsTask : public IScheduledTask, public IProtocolHandler<Cfg>
 {
   public:
+    /**
+     * @brief Callback type for capturing a PerformanceSnapshot.
+     *
+     * Wired by SystemBuilder to `System<Cfg>::snapshot()`. Avoids
+     * a circular include between ScheduledCommsTask and System.
+     */
+    using MetricsSnapshotFn = PerformanceSnapshot (*)();
+
     using CommandStruct = typename Cfg::Command;
 
     /**
@@ -53,13 +71,21 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask
     SputterMicros periodUs() const override { return CfgCommsBudgetUs<Cfg>::value; }
 
     /**
-     * @brief Initialize the stream reader and reset the command parser.
+     * @brief Initialize the stream reader, wire up the protocol handler, and reset state.
      */
-    void init() override { m_cli.tick(); }
+    void init() override
+    {
+        m_cli.setProtocolHandler(this);
+        m_cli.tick();
+    }
 
     /**
-     * @brief Read available bytes, feed the parser, and push any complete commands.
+     * @brief Read available bytes, process commands, and send responses.
      * @param systemTimeMicros: Monotonic system time forwarded from the scheduler.
+     *
+     * Behavior adapts to the current `CommsMode` of the CLI:
+     * - TEXT: drain parsed ASCII commands → queue → ACK/NACK ASCII
+     * - FRAMED: drain framed commands → queue → ACK/NACK frames
      */
     void tick(SputterMicros /*systemTimeMicros*/) override
     {
@@ -72,11 +98,26 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask
             {
                 if (m_commandQueue->try_push(cmd))
                 {
-                    sendAck(cmd);
+                    if (m_cli.getMode() == CommsMode::FRAMED)
+                    {
+                        m_cli.sendFramedAck(m_cli.getLastFramedSeqNum(), static_cast<uint8_t>(cmd.id));
+                    }
+                    else
+                    {
+                        sendTextAck(cmd);
+                    }
                 }
                 else
                 {
-                    sendNack(cmd);
+                    if (m_cli.getMode() == CommsMode::FRAMED)
+                    {
+                        m_cli.sendFramedNack(m_cli.getLastFramedSeqNum(), static_cast<uint8_t>(cmd.id),
+                                             cmd.targetDevice, cmd.value);
+                    }
+                    else
+                    {
+                        sendTextNack(cmd);
+                    }
                 }
             }
         }
@@ -100,6 +141,90 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask
         // Intentionally Empty
     }
 
+    /**
+     * @brief Set the metrics snapshot callback.
+     * @param fn  Function pointer to a PerformanceSnapshot capture routine.
+     *
+     * Called by SystemBuilder after construction to wire System<Cfg>::snapshot.
+     */
+    void setMetricsSnapshotFn(MetricsSnapshotFn fn) { m_snapshotFn = fn; }
+
+    /**
+     * @brief Access the underlying CLI for external telemetry output.
+     * @return Reference to the internal CLI instance.
+     */
+    CLI<Cfg> &cli() { return m_cli; }
+
+    // =====================================================================
+    //  IProtocolHandler<Cfg> implementation (FRAMED mode callbacks)
+    // =====================================================================
+
+    /**
+     * @brief Handle a decoded COMMAND frame.
+     * @param cmd    Deserialized command struct.
+     * @param seqNum Frame sequence number (used for ACK/NACK correlation).
+     *
+     * @note Commands from framed mode are stored in the CLI for the main
+     *       `tick()` loop to pick up, so this callback is a no-op —
+     *       the CLI stores the command directly in `handleDecodedFrame()`.
+     */
+    void onCommand(const CommandStruct & /*cmd*/, uint8_t /*seqNum*/) override
+    {
+        // Commands are handled in tick() via m_cli.hasCommand() / getCommand().
+        // The CLI stores framed commands directly — no additional work needed.
+    }
+
+    /**
+     * @brief Handle a HANDSHAKE_REQ frame.
+     * @param version Protocol version from the host.
+     * @param seqNum  Frame sequence number.
+     *
+     * Sends HANDSHAKE_RESP to confirm the mode switch.
+     */
+    void onHandshakeRequest(uint16_t /*version*/, uint8_t seqNum) override { m_cli.sendFramedHandshakeResp(seqNum); }
+
+    /**
+     * @brief Handle an EXIT_HANDSHAKE frame.
+     * @param seqNum Frame sequence number.
+     *
+     * Sends a framed ACK and reverts the CLI to TEXT mode.
+     */
+    void onExitHandshake(uint8_t seqNum) override
+    {
+        m_cli.sendFramedAck(seqNum, static_cast<uint8_t>(MessageType::EXIT_HANDSHAKE));
+        m_cli.exitFramedMode();
+    }
+
+    /**
+     * @brief Handle a METRICS_REQ frame.
+     * @param seqNum Frame sequence number.
+     *
+     * @note Metrics serialization requires access to System<Cfg>::snapshot(),
+     *       which is wired externally. This base implementation sends an
+     *       empty METRICS_RESP as a placeholder. Override or extend via
+     *       a metrics callback for full snapshot serialization.
+     */
+    void onMetricsRequest(uint8_t seqNum) override
+    {
+        if (!m_snapshotFn)
+        {
+            m_cli.sendFramedMetricsResp(seqNum, nullptr, 0);
+            return;
+        }
+        const PerformanceSnapshot snap = m_snapshotFn();
+        uint8_t buf[ResponseSerializer::kMetricsHeaderSize + kMaxSnapshotTasks * ResponseSerializer::kMetricsTaskSize];
+        const std::size_t len = ResponseSerializer::serializeMetrics(snap, buf, sizeof(buf));
+        m_cli.sendFramedMetricsResp(seqNum, buf, len);
+    }
+
+    /**
+     * @brief Handle a HEARTBEAT frame.
+     * @param seqNum Frame sequence number.
+     *
+     * Echoes a heartbeat response.
+     */
+    void onHeartbeat(uint8_t seqNum) override { m_cli.sendFramedHeartbeat(seqNum); }
+
   private:
     friend class SystemBuilder<Cfg>;
     friend struct KernelTestAccess;
@@ -113,22 +238,29 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask
 
     /**
      * --------------------
+     * Metrics callback
+     * --------------------
+     */
+    MetricsSnapshotFn m_snapshotFn = nullptr; /**< @brief Captures a PerformanceSnapshot (wired by builder). */
+
+    /**
+     * --------------------
      * CLI
      * --------------------
      */
-    CLI<Cfg> m_cli; /**< @brief Stream I/O, command parsing, and telemetry formatter. */
+    CLI<Cfg> m_cli; /**< @brief Dual-mode stream I/O, command parsing, and framed protocol. */
 
     /**
      * --------------------
-     * ACK / NACK Responses
+     * TEXT Mode ACK / NACK Responses
      * --------------------
      */
 
     /**
-     * @brief Send an ACK response to the host for a successfully queued command.
+     * @brief Send a TEXT-mode ACK response for a successfully queued command.
      * @param cmd: The command that was accepted.
      */
-    void sendAck(const CommandStruct &cmd)
+    void sendTextAck(const CommandStruct &cmd)
     {
         m_cli.builder().clear();
         m_cli.builder().append("ACK ").append(static_cast<int32_t>(cmd.id)).append('\n');
@@ -136,12 +268,12 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask
     }
 
     /**
-     * @brief Send a NACK response to the host when the queue rejects a command.
+     * @brief Send a TEXT-mode NACK response when the queue rejects a command.
      * @param cmd: The command that was dropped.
      *
      * Wire format: `NACK <cmd_id> <sub_id> <value>\n`
      */
-    void sendNack(const CommandStruct &cmd)
+    void sendTextNack(const CommandStruct &cmd)
     {
         m_cli.builder().clear();
         m_cli.builder()

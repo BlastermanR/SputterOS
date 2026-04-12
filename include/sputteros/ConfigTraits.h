@@ -256,6 +256,28 @@ template <typename Cfg> struct CfgMaxLineLen<Cfg, std::void_t<decltype(Cfg::kMax
     static constexpr std::size_t value = Cfg::kMaxLineLen;
 };
 
+/**
+ * @brief Extracts `Cfg::kMaxFramePayload` or defaults to 256.
+ *
+ * Controls the maximum payload size for COBS-framed protocol messages.
+ * Determines the buffer sizes in `FrameDecoder`, `FrameEncoder`, and `CLI`.
+ *
+ * **Trade-offs:**
+ * - Smaller values: less static RAM per CLI instance, but limits the
+ *   maximum size of a single framed message (e.g. metrics snapshots).
+ * - Larger values: can carry bigger payloads (full PerformanceSnapshot),
+ *   but increases per-CLI static RAM usage.
+ */
+template <typename Cfg, typename = void> struct CfgMaxFramePayload
+{
+    static constexpr std::size_t value = 256;
+};
+
+template <typename Cfg> struct CfgMaxFramePayload<Cfg, std::void_t<decltype(Cfg::kMaxFramePayload)>>
+{
+    static constexpr std::size_t value = Cfg::kMaxFramePayload;
+};
+
 // =========================================================================
 // Scheduling config extractors (§10.7)
 // =========================================================================

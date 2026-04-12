@@ -28,12 +28,17 @@ target_include_directories(lifecycle_osNative PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal_impl    # LifecycleHAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/osal_impl   # LifecycleOSAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include     # LifecycleStateMachine.h, tasks
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common/hal  # TcpStreamServer.h
 )
 
 target_link_libraries(lifecycle_osNative PRIVATE
     SputterOS        # SputterOS header-only + compiled utils
     Threads::Threads # std::thread, std::this_thread::sleep_for
 )
+
+if(WIN32)
+    target_link_libraries(lifecycle_osNative PRIVATE ws2_32)
+endif()
 
 if(MSVC)
     target_compile_options(lifecycle_osNative PRIVATE /W4)
