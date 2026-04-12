@@ -20,17 +20,17 @@
 #include "sputteros/osal/SputterTime.h"
 
 // ── Task Interfaces ─────────────────────────────────────────────────────────
-#include "sputteros/osal/tasks/ITask.h"
-#include "sputteros/osal/tasks/IScheduledTask.h"
 #include "sputteros/osal/tasks/IBackgroundTask.h"
+#include "sputteros/osal/tasks/IScheduledTask.h"
+#include "sputteros/osal/tasks/ITask.h"
 
 // ── Synchronization ─────────────────────────────────────────────────────────
+#include "sputteros/osal/sync/ICommandConsumer.h"
+#include "sputteros/osal/sync/ICommandProducer.h"
+#include "sputteros/osal/sync/ICoreErrorHandler.h"
+#include "sputteros/osal/sync/IMessageQueue.h"
 #include "sputteros/osal/sync/LockFreeQueue.h"
 #include "sputteros/osal/sync/MultiCoreSync.h"
 #include "sputteros/osal/sync/WatchdogSync.h"
-#include "sputteros/osal/sync/ICommandConsumer.h"
-#include "sputteros/osal/sync/ICommandProducer.h"
-#include "sputteros/osal/sync/IMessageQueue.h"
-#include "sputteros/osal/sync/ICoreErrorHandler.h"
 
 #endif // SPUTTEROS_OSAL_H

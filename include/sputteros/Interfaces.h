@@ -17,8 +17,8 @@
  */
 
 // ── Application Interfaces ──────────────────────────────────────────────────
-#include "sputteros/kernel/interfaces/IUserApplication.h"
-#include "sputteros/kernel/interfaces/ISafetyMonitor.h"
 #include "sputteros/interfaces/IProcessState.h"
+#include "sputteros/kernel/interfaces/ISafetyMonitor.h"
+#include "sputteros/kernel/interfaces/IUserApplication.h"
 
 #endif // SPUTTEROS_INTERFACES_H

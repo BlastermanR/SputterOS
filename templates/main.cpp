@@ -23,18 +23,18 @@
  */
 
 // ── Your Project Headers ────────────────────────────────────────────────────
-#include "MyProjectConfig.h"  // Your configuration struct
+#include "MyProjectConfig.h" // Your configuration struct
 
 // ── SputterOS Headers ───────────────────────────────────────────────────────
 // Option A: Include everything (convenient for getting started)
 // #include "sputteros/SputterOS.h"
 
 // Option B: Include only what you need (recommended for production)
-#include "sputteros/Builder.h"     // SystemBuilder
-#include "sputteros/Kernel.h"      // System, ISafetyMonitor, IUserApplication
-#include "sputteros/OSAL.h"        // SputterTime, tasks, sync
-#include "sputteros/HAL.h"         // IStream
-#include "sputteros/Utils.h"       // TelemetryLogger
+#include "sputteros/Builder.h" // SystemBuilder
+#include "sputteros/HAL.h"     // IStream
+#include "sputteros/Kernel.h"  // System, ISafetyMonitor, IUserApplication
+#include "sputteros/OSAL.h"    // SputterTime, tasks, sync
+#include "sputteros/Utils.h"   // TelemetryLogger
 
 // ── Standard Library ────────────────────────────────────────────────────────
 #include <array>
@@ -112,10 +112,7 @@ class MySafetyMonitor : public ISafetyMonitor
         return true; // Placeholder — always safe
     }
 
-    const char *name() const override
-    {
-        return "MySafetyMonitor";
-    }
+    const char *name() const override { return "MySafetyMonitor"; }
 };
 
 // =========================================================================
@@ -195,9 +192,9 @@ static SputterMicros platformGetTimeMicros()
 int main()
 {
     // -- Instantiate User Components ----------------------------------------
-    MyApplication    app;
-    MySafetyMonitor  safetyMonitor;
-    MyStream         stream;
+    MyApplication   app;
+    MySafetyMonitor safetyMonitor;
+    MyStream        stream;
 
     // Multiple safety monitors can be registered:
     std::array<ISafetyMonitor *, 1> monitors = {&safetyMonitor};
@@ -209,7 +206,7 @@ int main()
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
     builder.setStream(&stream);
     builder.setClockSource(platformGetTimeMicros);
-    builder.setWatchdogKick(nullptr);  // Set to your platform's watchdog kick function
+    builder.setWatchdogKick(nullptr); // Set to your platform's watchdog kick function
 
     // Register custom user tasks (if any):
     // builder.core(0).addScheduledTask(&mySensorTask);

@@ -20,8 +20,8 @@
 #include "sputteros/logic/CommandParser.h"
 
 // ── Interlock Safety ────────────────────────────────────────────────────────
-#include "sputteros/logic/InterlockManager.h"
-#include "sputteros/logic/IInterlockCondition.h"
 #include "sputteros/logic/IFaultResponse.h"
+#include "sputteros/logic/IInterlockCondition.h"
+#include "sputteros/logic/InterlockManager.h"
 
 #endif // SPUTTEROS_LOGIC_H

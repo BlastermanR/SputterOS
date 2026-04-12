@@ -18,13 +18,13 @@
  */
 
 // ── Process Control ─────────────────────────────────────────────────────────
-#include "sputteros/utils/PIDController.h"
-#include "sputteros/utils/NonBlockingStopwatch.h"
 #include "sputteros/utils/MemoryProfiler.h"
+#include "sputteros/utils/NonBlockingStopwatch.h"
+#include "sputteros/utils/PIDController.h"
 
 // ── Logging ─────────────────────────────────────────────────────────────────
 #include "sputteros/utils/logging/ErrorLogger.h"
-#include "sputteros/utils/logging/TelemetryLogger.h"
 #include "sputteros/utils/logging/LightweightStringBuilder.h"
+#include "sputteros/utils/logging/TelemetryLogger.h"
 
 #endif // SPUTTEROS_UTILS_H

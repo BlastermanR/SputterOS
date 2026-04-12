@@ -18,22 +18,22 @@
  */
 
 // ── Kernel Core ─────────────────────────────────────────────────────────────
-#include "sputteros/kernel/System.h"
-#include "sputteros/kernel/KernelState.h"
 #include "sputteros/kernel/KernelConstructTag.h"
+#include "sputteros/kernel/KernelState.h"
+#include "sputteros/kernel/System.h"
 #include "sputteros/kernel/TaskState.h"
 
 // ── Kernel Tasks ────────────────────────────────────────────────────────────
-#include "sputteros/kernel/ScheduledControlTask.h"
-#include "sputteros/kernel/ScheduledCommsTask.h"
 #include "sputteros/kernel/BackgroundDiagnosticsTask.h"
+#include "sputteros/kernel/ScheduledCommsTask.h"
+#include "sputteros/kernel/ScheduledControlTask.h"
 
 // ── Kernel Metrics ──────────────────────────────────────────────────────────
-#include "sputteros/kernel/TaskTimer.h"
 #include "sputteros/kernel/DeadlineTracker.h"
+#include "sputteros/kernel/TaskTimer.h"
 
 // ── Kernel Interfaces ───────────────────────────────────────────────────────
-#include "sputteros/kernel/interfaces/IUserApplication.h"
 #include "sputteros/kernel/interfaces/ISafetyMonitor.h"
+#include "sputteros/kernel/interfaces/IUserApplication.h"
 
 #endif // SPUTTEROS_KERNEL_H
