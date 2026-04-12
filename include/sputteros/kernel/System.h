@@ -267,7 +267,7 @@ template <typename Cfg> class System
         }
 
         SputterMicros tickEndTime = s_timer.nowMicros();
-        s_utilTracker[coreId].recordTickEnd(busyAccum);
+        s_utilTracker[coreId].recordTickEnd(tickEndTime, busyAccum);
 
         // Record gap time (wall time - busy time) for scheduler health
         SputterMicros wallTime = (tickEndTime >= systemTimeMicros) ? (tickEndTime - systemTimeMicros) : 0;
