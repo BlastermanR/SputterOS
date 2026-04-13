@@ -21,6 +21,7 @@
 
 // ── Task Interfaces ─────────────────────────────────────────────────────────
 #include "sputteros/osal/tasks/IBackgroundTask.h"
+#include "sputteros/osal/tasks/ICrunchTask.h"
 #include "sputteros/osal/tasks/IScheduledTask.h"
 #include "sputteros/osal/tasks/ITask.h"
 
