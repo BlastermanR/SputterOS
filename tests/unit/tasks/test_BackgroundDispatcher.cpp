@@ -286,8 +286,7 @@ TEST(BackgroundDispatcher, DiagnosticsTaskNotInCoreTaskList)
         for (std::size_t t = 0; t < System<Cfg>::taskCount(c); ++t)
         {
             ITask *tsk = System<Cfg>::task(c, t);
-            EXPECT_FALSE(tsk->isBackground())
-                << "Background task found in core " << c << " task list at index " << t;
+            EXPECT_FALSE(tsk->isBackground()) << "Background task found in core " << c << " task list at index " << t;
         }
     }
 }
