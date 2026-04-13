@@ -93,19 +93,21 @@ Background tasks declare a maximum per-tick execution budget via `maxBudgetUs()`
 
 ### 2.3 Kernel Task Implementations
 
-| Task | Base | Core | Role |
-|------|------|------|------|
-| `ScheduledControlTask<Cfg>` | `IScheduledTask` | 0 (slot 0) | Safety eval → command drain → user app tick |
-| `ScheduledCommsTask<Cfg>` | `IScheduledTask` | 1 (slot 0, or 0 in single-core) | Serial ingestion → CLI parse → queue push |
-| `BackgroundDiagnosticsTask` | `IBackgroundTask` | Shared core list (Phase 3: background ring) | Watchdog kick, timer scan, memory profile |
+| Task | Base | Dispatch | Role |
+|------|------|----------|------|
+| `ScheduledControlTask<Cfg>` | `IScheduledTask` | Core 0, slot 0 | Safety eval → command drain → user app tick |
+| `ScheduledCommsTask<Cfg>` | `IScheduledTask` | Core 1 slot 0 (or Core 0, single-core) | Serial ingestion → CLI parse → queue push |
+| `BackgroundDiagnosticsTask` | `IBackgroundTask` | Background ring — gap-time dispatch | Watchdog kick, timer scan, memory profile |
 
-`ICriticalTask` and `IAsyncTask` are retired. Core affinity is specified at registration time via `builder.core(N).addScheduledTask()`.
+`BackgroundDiagnosticsTask` is registered exclusively in the background task ring and dispatched by Phase 2 of `System::tick()` (see §3.1). It does **not** appear in any core's scheduled task list.
 
 ---
 
 ## 3. Dispatch Algorithm
 
-`System<Cfg>::tick()` is the kernel's inner loop entry point:
+`System<Cfg>::tick()` is the kernel's inner loop entry point. Each call executes in two phases:
+
+**Phase 1 — Scheduled task loop** (all cores)
 
 ```cpp
 static void tick(std::size_t coreId, SputterMicros now)
@@ -122,7 +124,7 @@ static void tick(std::size_t coreId, SputterMicros now)
     // 3. Record tick start for utilization tracking
     s_utilTracker[coreId].recordTickStart(now);
 
-    // 4. Flat task loop — all tasks on this core, in declaration order
+    // 4. Phase 1: Flat scheduled-task loop — all tasks on this core, in declaration order
     SputterMicros busyAccum = 0;
     for (std::size_t t = 0; t < s_cores[coreId].taskCount; ++t)
     {
@@ -136,7 +138,34 @@ static void tick(std::size_t coreId, SputterMicros now)
         }
     }
 
-    // 5. Record tick end; utilization = busyAccum / (tickEnd - tickStart)
+    // 5. Phase 2: Background task dispatch (background core only)
+    if (coreId == s_backgroundCoreId && s_backgroundTaskCount > 0)
+    {
+        SputterMicros gapBudget = CfgControlBudgetUs<Cfg>::value;
+        SputterMicros used      = busyAccum;
+
+        for (std::size_t i = 0; i < s_backgroundTaskCount; ++i)
+        {
+            IBackgroundTask *bg = s_backgroundTasks[s_bgRoundRobin];
+            s_bgRoundRobin      = (s_bgRoundRobin + 1) % s_backgroundTaskCount;
+
+            if (bg)
+            {
+                // After the first dispatch, enforce budget cap
+                if (i > 0)
+                {
+                    if (used + bg->maxBudgetUs() > gapBudget)
+                        break;
+                }
+                bg->timer().start();
+                bg->tick(now);
+                bg->timer().stop();
+                used += bg->timer().lastDuration();
+            }
+        }
+    }
+
+    // 6. Record tick end; utilization = busyAccum / (tickEnd - tickStart)
     SputterMicros tickEnd = s_timer.nowMicros();
     s_utilTracker[coreId].recordTickEnd(tickEnd, busyAccum);
 }
@@ -144,12 +173,23 @@ static void tick(std::size_t coreId, SputterMicros now)
 
 **Key properties:**
 
-- Tasks execute in **registration order**. Kernel tasks are prepended at build time, so the order is always: `ScheduledControlTask` → `ScheduledCommsTask` + `BackgroundDiagnosticsTask` → user tasks.
-- Every task is called **every tick** regardless of whether its period has elapsed. Tasks that aren't due return in a few nanoseconds.
-- Timer instrumentation records real wall-clock duration even for early-return ticks, providing accurate idle overhead measurements.
-- `System::tick()` **does not** check `isIoPending()` or enforce `maxBudgetUs()` — these are enforced by the task and reported to diagnostics.
+- Scheduled tasks execute in **registration order**. Kernel scheduled tasks are prepended at build time so the order is always: `ScheduledControlTask` → `ScheduledCommsTask` → user tasks.
+- Every scheduled task is called **every tick** regardless of whether its period has elapsed. Tasks that aren't due return in a few nanoseconds.
+- Background tasks dispatch **only on the designated background core** (`s_backgroundCoreId`) in Phase 2 after all scheduled tasks have run.
+- Background task dispatch is **round-robin**: each tick advances the ring index, so all registered background tasks receive equal scheduling priority across ticks.
+- **First background task always dispatches** unconditionally (to guarantee `BackgroundDiagnosticsTask` can monitor the system even when Phase 1 saturates the budget). Additional tasks are budget-gated by the remaining gap time.
+- Timer instrumentation records real wall-clock duration for scheduled tasks in Phase 1 and background tasks in Phase 2.
 
-### 3.1 Tick Loop Sequencing (Mermaid)
+### 3.1 Background Dispatcher Core Selection
+
+`SystemBuilder::build()` sets `System<Cfg>::s_backgroundCoreId` to the **last active core** (Core 1 in dual-core, Core 0 in single-core). Background tasks run exclusively on this core, keeping them off the real-time Core 0 control path in dual-core configurations.
+
+| Config | Background Core | Rationale |
+|--------|-----------------|-----------|
+| Single-core (`kCoreCount == 1`) | Core 0 | Only core available |
+| Dual-core (`kCoreCount == 2`) | Core 1 | Frees Core 0 for deterministic control |
+
+### 3.2 Tick Loop Sequencing (Mermaid)
 
 ```mermaid
 sequenceDiagram
@@ -157,16 +197,19 @@ sequenceDiagram
     participant Sys as System&lt;Cfg&gt;::tick()
     participant SCT as ScheduledControlTask
     participant SCM as ScheduledCommsTask
-    participant BDT as BackgroundDiagnosticsTask
     participant User as User IScheduledTask(s)
+    participant BDT as BackgroundDiagnosticsTask
 
-    Run->>Sys: tick(0, now)
+    Run->>Sys: tick(bgCore, now) [Phase 1]
     Sys->>SCT: timer.start() → tick(now) → timer.stop()
     SCT->>SCT: evaluateSafety() → processCommands() → app.tick()
-    Sys->>BDT: timer.start() → tick(now) → timer.stop()
-    BDT->>BDT: watchdogKick(), scan timers, drain telemetry
+    Sys->>SCM: timer.start() → tick(now) → timer.stop()
+    SCM->>SCM: CLI.tick() → try_push()
     Sys->>User: timer.start() → tick(now) → timer.stop()
     User->>User: rate-limit check → do work or return
+    Note over Sys: Phase 2 — background dispatch (bgCore only)
+    Sys->>BDT: timer.start() → tick(now) → timer.stop()
+    BDT->>BDT: watchdogKick(), scan timers, drain telemetry
 ```
 
 ---
@@ -270,19 +313,51 @@ public:
 
 ## 6. Background Tasks
 
-Background tasks (`IBackgroundTask`) are registered via `SystemBuilder::addBackgroundTask()` and stored in `System<Cfg>::s_backgroundTasks[]`. Currently they are also appended to a core's task list for dispatch (the same flat loop ticks them). The budget declared by `maxBudgetUs()` is observed by `TaskTimer` and checked by `BackgroundDiagnosticsTask`, but the scheduler does not preempt overrunning background tasks.
+Background tasks (`IBackgroundTask`) are registered via `SystemBuilder::addBackgroundTask()` and stored in `System<Cfg>::s_backgroundTasks[]`. They are dispatched by **Phase 2 of `System::tick()`** on the designated background core — they do **not** appear in any core's scheduled task list.
 
-Future work: Phase 3 — the `SystemScheduler` background ring will dispatch background tasks only in idle gaps between scheduled task activations, eliminating the need to place them in the core task list.
+### 6.1 Dispatch Model
 
-### 6.1 BackgroundDiagnosticsTask
+Phase 2 runs a single **round-robin pass** through the background ring after Phase 1 completes:
+
+1. The **first task in the round-robin** always dispatches unconditionally — this guarantees `BackgroundDiagnosticsTask` runs every tick regardless of how saturated Phase 1 is.
+2. Each subsequent task is dispatched only if `used + task->maxBudgetUs() <= CfgControlBudgetUs<Cfg>::value`, where `used` is the accumulated Phase 1 + Phase 2 busy time.
+3. The round-robin index `s_bgRoundRobin` advances each tick, ensuring all tasks receive equal priority distribution across ticks.
+
+### 6.2 Static Members
+
+| Member | Type | Purpose |
+|--------|------|---------|
+| `s_backgroundTasks[]` | `IBackgroundTask*[kMaxBackgroundTasks]` | Registered background task pointers |
+| `s_backgroundTaskCount` | `std::size_t` | Number of registered tasks |
+| `s_bgRoundRobin` | `std::size_t` | Current dispatch position in the ring |
+| `s_backgroundCoreId` | `std::size_t` | Which core dispatches Phase 2 |
+
+### 6.3 BackgroundDiagnosticsTask
 
 The kernel's built-in diagnostics background task. Responsibilities:
 
 - **Watchdog kick** — calls the injected platform watchdog function each tick.
 - **WCET scan** — reads every registered `ITask::timer()` and logs overruns against `declaredWcetUs()` or the auto-profiled max.
 - **Memory profiling** — calls `MemoryProfiler` every `kMemCheckInterval` ticks (default 100).
+- **Telemetry drain** — if a drain callback is registered, flushes the kernel `TelemetryLogger` each tick.
 
-Registered automatically by `SystemBuilder::build()` when an `IUserApplication` is provided.
+Registered automatically by `SystemBuilder::build()` when an `IUserApplication` is provided. Its `maxBudgetUs()` returns 1000 µs — separate from `m_controlBudget`, which is used internally to check other tasks' violations.
+
+### 6.4 Registration
+
+```cpp
+class MyLogger : public IBackgroundTask {
+public:
+    void          init() override { /* open log file, etc. */ }
+    void          tick(SputterMicros) override { /* drain buffers */ }
+    SputterMicros maxBudgetUs() const override { return 500; } // 500 µs budget
+};
+
+MyLogger logger;
+builder.addBackgroundTask(&logger);
+```
+
+Background tasks are initialized by `System::init()` on the background core and ticked every cycle thereafter in Phase 2.
 
 ---
 
@@ -431,13 +506,13 @@ System<Cfg>::run(0);
 
 When `app` is non-null, `build()` creates and pre-registers:
 
-| Task | Core | Position |
-|------|------|---------|
-| `ScheduledControlTask` | 0 | Slot 0 (prepended) |
-| `ScheduledCommsTask` | 1 (or 0, single-core) | Slot 0 (prepended) |
-| `BackgroundDiagnosticsTask` | Shared (prepended to core list) | First background |
+| Task | Core list | Position | Background ring |
+|------|-----------|----------|-----------------|
+| `ScheduledControlTask` | Core 0 | Slot 0 (prepended) | — |
+| `ScheduledCommsTask` | Core 1 (or 0, single-core) | Slot 0 (prepended) | — |
+| `BackgroundDiagnosticsTask` | *none* | — | Slot 0 (first) |
 
-User tasks added via `addScheduledTask()` follow the kernel tasks in tick order.
+User tasks added via `addScheduledTask()` follow the kernel scheduled tasks in tick order. User background tasks added via `addBackgroundTask()` are appended to the background ring after `BackgroundDiagnosticsTask`.
 
 ---
 

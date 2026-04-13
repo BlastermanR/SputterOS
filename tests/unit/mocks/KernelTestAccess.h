@@ -66,6 +66,8 @@ struct KernelTestAccess
     template <typename Cfg> static void resetBackgroundTasks()
     {
         System<Cfg>::s_backgroundTaskCount = 0;
+        System<Cfg>::s_bgRoundRobin        = 0;
+        System<Cfg>::s_backgroundCoreId    = 0;
         for (auto &t : System<Cfg>::s_backgroundTasks)
             t = nullptr;
     }

@@ -341,8 +341,9 @@ TEST_F(SchedulingStress_CoreSaturation, ThirtyUserTasksAllTicked)
     }
     ASSERT_TRUE(builder.build());
 
-    // Kernel tasks (3) + user tasks (30) = 33 total on core 0.
-    EXPECT_EQ(System<CoreSatCfg>::taskCount(0), kTaskCount + 3);
+    // Kernel scheduled tasks (2: ControlTask + CommsTask) + user tasks (30) = 32 total on core 0.
+    // BackgroundDiagnosticsTask is in the background ring, not the core list.
+    EXPECT_EQ(System<CoreSatCfg>::taskCount(0), kTaskCount + 2);
 
     System<CoreSatCfg>::init(0);
 

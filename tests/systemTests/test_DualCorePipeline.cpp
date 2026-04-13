@@ -7,7 +7,7 @@
  * - Both cores can call init() concurrently without deadlock.
  * - Commands pre-loaded into the queue by "Core 1" are delivered to the
  *   IUserApplication by ControlTask running on "Core 0".
- * - Core 1 ticking (ScheduledCommsTask + BackgroundDiagnosticsTask) concurrently with Core 0
+ * - Core 1 ticking (ScheduledCommsTask + background dispatch) concurrently with Core 0
  *   does not corrupt application state or crash the system.
  * - Commands pushed before concurrent ticking begins are all delivered.
  *
