@@ -13,11 +13,12 @@ How to distribute SputterOS across multiple CPU cores while preserving safety gu
 5. [Dual-Core Reference — RP2350](#dual-core-reference--rp2350)
 6. [Watchdog Health Monitoring](#watchdog-health-monitoring)
 7. [Inter-Core Command Queue](#inter-core-command-queue)
-8. [Memory Ordering](#memory-ordering)
-9. [ISR Registration Across Cores](#isr-registration-across-cores)
-10. [Performance Characteristics](#performance-characteristics)
-11. [Single-Core Fallback](#single-core-fallback)
-12. [Testing Multi-Core Code](#testing-multi-core-code)
+8. [AtomicDoubleBuffer — Latest-Value Sharing](#atomicdoublebuffer--latest-value-sharing)
+9. [Memory Ordering](#memory-ordering)
+10. [ISR Registration Across Cores](#isr-registration-across-cores)
+11. [Performance Characteristics](#performance-characteristics)
+12. [Single-Core Fallback](#single-core-fallback)
+13. [Testing Multi-Core Code](#testing-multi-core-code)
 
 ---
 
@@ -32,6 +33,7 @@ How to distribute SputterOS across multiple CPU cores while preserving safety gu
 
 Multi-core adds memory-ordering and synchronization constraints. SputterOS handles these with:
 - `LockFreeQueue` - SPSC ring buffer with `std::atomic` acquire/release
+- `AtomicDoubleBuffer<T>` - wait-free SWSR double buffer for latest-value sensor/state sharing
 - `MultiCoreSync<N>` - lifecycle state machine with barriers
 - `WatchdogSync<N>` - per-core heartbeat staleness detection
 
@@ -377,7 +379,9 @@ queue.try_pop(cmd);   // load head with acquire — sees complete cmd fields
 
 ### Custom Cross-Core Data
 
-If you share data beyond the command queue (e.g. a live pressure reading), use `std::atomic` with explicit ordering:
+For multi-word structs or any data larger than a single atomic scalar, use `AtomicDoubleBuffer<T>` (see [AtomicDoubleBuffer — Latest-Value Sharing](#atomicdoublebuffer--latest-value-sharing) below) instead of raw atomics.
+
+For single scalar values, `std::atomic` with explicit ordering is also acceptable:
 
 ```cpp
 // Core 1 writes
@@ -389,6 +393,64 @@ float p = g_latestPressure.load(std::memory_order_acquire);
 ```
 
 **Avoid:** plain assignment to shared non-atomic variables across cores. The compiler and CPU may reorder reads/writes, causing torn or stale values.
+
+---
+
+## AtomicDoubleBuffer — Latest-Value Sharing
+
+`AtomicDoubleBuffer<T, CachePolicy>` is a wait-free, single-writer / single-reader double buffer designed for sharing the **most recent** value of a multi-word struct between cores without locking.
+
+### When to Use
+
+| Use `AtomicDoubleBuffer<T>` | Use `LockFreeQueue<Cfg, N>` |
+|---|---|
+| Latest sensor reading / setpoint | Every command must be processed |
+| High-frequency telemetry snapshots | Order-sensitive command streams |
+| Core 1 crunch task writing state back to Core 0 | UART-sourced operator commands |
+| Scalar or struct; overwriting stale data is acceptable | Cannot afford to drop any entry |
+
+### Usage
+
+```cpp
+#include "sputteros/osal/sync/AtomicDoubleBuffer.h"
+
+struct SensorState { float pressure; float temperature; uint32_t seq; };
+
+// Shared buffer — lives in a struct/class accessible by both cores.
+AtomicDoubleBuffer<SensorState> g_sensorState;
+
+// Producer (Core 1):
+SensorState s = readSensors();
+g_sensorState.write(s);   // memory_order_release + optional cache flush
+
+// Consumer (Core 0):
+SensorState latest = g_sensorState.read();  // memory_order_acquire + optional invalidate
+```
+
+### Memory Ordering
+
+`write()` stores the slot index with `memory_order_release`; `read()` loads it with `memory_order_acquire`. This establishes a happens-before edge: all fields written by the producer before `write()` are visible to the consumer after `read()`, with no additional fencing required.
+
+### CachePolicy
+
+On platforms with software-managed D-cache, wrap the buffer with a custom policy:
+
+```cpp
+struct STM32CachePolicy {
+    static void flushBuffer(const void* addr, std::size_t bytes) {
+        SCB_CleanDCache_by_Addr(reinterpret_cast<uint32_t*>(const_cast<void*>(addr)),
+                                static_cast<int32_t>(bytes));
+    }
+    static void invalidateBuffer(const void* addr, std::size_t bytes) {
+        SCB_InvalidateDCache_by_Addr(reinterpret_cast<uint32_t*>(const_cast<void*>(addr)),
+                                     static_cast<int32_t>(bytes));
+    }
+};
+
+AtomicDoubleBuffer<SensorState, STM32CachePolicy> g_sensorState;
+```
+
+The default `NoCachePolicy` compiles to zero overhead on cache-coherent hosts and most Cortex-M platforms.
 
 ---
 
