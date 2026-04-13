@@ -12,12 +12,13 @@ Documents the implemented scheduling model: task type hierarchy, dispatch algori
 4. [Rate-Limiting Model](#rate-limiting-model)
 5. [IO_PENDING Pattern](#io_pending-pattern)
 6. [Background Tasks](#background-tasks)
-7. [Kernel State Machine](#kernel-state-machine)
-8. [Deadline Infrastructure](#deadline-infrastructure)
-9. [Task Timer Instrumentation](#task-timer-instrumentation)
-10. [Builder Registration API](#builder-registration-api)
-11. [ConfigTraits Extensions](#configtraits-extensions)
-12. [Testing Coverage](#testing-coverage)
+7. [Crunch Core Mode](#crunch-core-mode)
+8. [Kernel State Machine](#kernel-state-machine)
+9. [Deadline Infrastructure](#deadline-infrastructure)
+10. [Task Timer Instrumentation](#task-timer-instrumentation)
+11. [Builder Registration API](#builder-registration-api)
+12. [ConfigTraits Extensions](#configtraits-extensions)
+13. [Testing Coverage](#testing-coverage)
 
 ---
 
@@ -45,10 +46,11 @@ This model gives:
 ```
 ITask  (base — lifecycle + device deps + timer)
 ├── IScheduledTask  (periodic, rate-limited by task, has period + WCET + IO_PENDING)
-└── IBackgroundTask (best-effort, budget-capped)
+├── IBackgroundTask (best-effort, budget-capped)
+└── ICrunchTask     (exclusive-core, blocking-tolerant tight loop)
 ```
 
-`ITask` is the root interface — never registered directly. All user tasks and kernel tasks subclass either `IScheduledTask` or `IBackgroundTask`.
+`ITask` is the root interface — never registered directly. All user tasks and kernel tasks subclass `IScheduledTask`, `IBackgroundTask`, or `ICrunchTask`.
 
 ### 2.1 IScheduledTask
 
@@ -91,12 +93,40 @@ public:
 
 Background tasks declare a maximum per-tick execution budget via `maxBudgetUs()`. The budget is recorded by `TaskTimer` and reported by `BackgroundDiagnosticsTask`; the kernel does not currently preempt tasks that exceed it.
 
-### 2.3 Kernel Task Implementations
+### 2.3 ICrunchTask
+
+Defined in `include/sputteros/osal/tasks/ICrunchTask.h`.
+
+```cpp
+class ICrunchTask : public ITask {
+public:
+    virtual void          crunch(SputterMicros now) = 0;
+    virtual SputterMicros crunchPeriodUs()    const = 0;
+    virtual SputterMicros maxIterationUs()    const = 0;
+    virtual void          onCrunchAbort() {}
+    bool isCrunchTask()  const final { return true; }
+    bool isScheduled()   const final { return false; }
+    bool isBackground()  const final { return false; }
+};
+```
+
+`ICrunchTask` is for hardware-facing tight loops that must call blocking platform APIs (e.g., SPI/I2C transactions, servo PWM updates) within a hard real-time bound. A core running in `CoreDispatchMode::CRUNCH` executes a bare `while (active) crunch(now)` loop — there is no Phase 2 background dispatch on that core.
+
+| Method | Purpose |
+|--------|---------|
+| `crunch(now)` | One iteration of the tight loop. Called as fast as the platform allows. |
+| `crunchPeriodUs()` | Nominal iteration period in µs. Enforced as a floor by `SystemBuilder::build()`. |
+| `maxIterationUs()` | Upper bound for a single `crunch()` call. Used by the WCET overrun counter. |
+| `onCrunchAbort()` | Called when the consecutive overrun counter reaches `kCrunchMaxOverruns`. Default no-op. |
+
+Registered via `CoreBuilder::setCrunchTask(&task)`. ICrunchTask **cannot** be placed on Core 0 and the core it occupies may have no other tasks. Requires `kCoreCount >= 2`. See §7 [Crunch Core Mode](#crunch-core-mode) for the full dispatch model.
+
+### 2.4 Kernel Task Implementations
 
 | Task | Base | Dispatch | Role |
 |------|------|----------|------|
 | `ScheduledControlTask<Cfg>` | `IScheduledTask` | Core 0, slot 0 | Safety eval → command drain → user app tick |
-| `ScheduledCommsTask<Cfg>` | `IScheduledTask` | Core 1 slot 0 (or Core 0, single-core) | Serial ingestion → CLI parse → queue push |
+| `ScheduledCommsTask<Cfg>` | `IScheduledTask` | Core 1 slot 0 (or Core 0 when Core 1 is CRUNCH, or Core 0 single-core) | Serial ingestion → CLI parse → queue push |
 | `BackgroundDiagnosticsTask` | `IBackgroundTask` | Background ring — gap-time dispatch | Watchdog kick, timer scan, memory profile |
 
 `BackgroundDiagnosticsTask` is registered exclusively in the background task ring and dispatched by Phase 2 of `System::tick()` (see §3.1). It does **not** appear in any core's scheduled task list.
@@ -361,7 +391,56 @@ Background tasks are initialized by `System::init()` on the background core and 
 
 ---
 
-## 7. Kernel State Machine
+## 7. Crunch Core Mode
+
+A core running in `CoreDispatchMode::CRUNCH` is dedicated entirely to one `ICrunchTask`. The kernel's Phase 1 and Phase 2 scheduling does **not** run on that core — instead `System::run()` executes a bare loop:
+
+```cpp
+// Simplified from System<Cfg>::run(), CRUNCH branch:
+while (isActiveState(s_kernelState) && !anyStopConditionFired())
+    core.crunchTask->crunch(s_timer.nowMicros());
+```
+
+This gives the crunch task exclusive CPU access and allows bounded blocking (e.g., blocking SPI transactions within `maxIterationUs()`) that would be unsafe in the cooperative `FLAT_LOOP` scheduler.
+
+### 7.1 Setup
+
+```cpp
+struct MyCfg {
+    static constexpr std::size_t kCoreCount = 2;
+    // ...
+};
+
+MyServoTask servo;   // implements ICrunchTask
+
+SputterOS::SystemBuilder<MyCfg> builder(&app, monitors, count);
+builder.core(1).setCrunchTask(&servo);
+auto result = builder.build();
+// Core 1 is now CRUNCH; ScheduledCommsTask is auto-placed on Core 0
+```
+
+### 7.2 Validation Rules
+
+`SystemBuilder::build()` enforces these constraints when `setCrunchTask()` is used:
+
+| # | Rule |
+|---|------|
+| 1 | ICrunchTask cannot be registered on Core 0 |
+| 2 | A CRUNCH core must have exactly one ICrunchTask and zero other tasks |
+| 3 | `kCoreCount >= 2` is required (CRUNCH is multi-core only) |
+| 4 | `crunchPeriodUs()` ≥ `CfgMinSchedulePeriodUs<Cfg>::value` |
+
+### 7.3 CommsTask Placement Fallback
+
+When Core 1 is set to `CRUNCH`, `SystemBuilder::build()` auto-places `ScheduledCommsTask` on Core 0 instead of Core 1. Core 0 therefore runs both `ScheduledControlTask` and `ScheduledCommsTask` in its Phase 1 loop.
+
+### 7.4 Overrun Handling
+
+If `crunch()` executes for longer than `maxIterationUs()` consecutively `kCrunchMaxOverruns` times (default 10), `onCrunchAbort()` is called on the task. The crunch loop continues unless the task or a stop condition explicitly exits.
+
+---
+
+## 8. Kernel State Machine
 
 `KernelState` is defined in `include/sputteros/kernel/KernelState.h` and tracked as `System<Cfg>::s_kernelState`.
 
@@ -387,7 +466,7 @@ UNCONFIGURED → CONFIGURED → INITIALIZING → RUNNING
 
 ---
 
-## 8. Deadline Infrastructure
+## 9. Deadline Infrastructure
 
 `DeadlineTracker` (`include/sputteros/kernel/DeadlineTracker.h`) is a lightweight POD struct for absolute-deadline tracking:
 
@@ -410,7 +489,7 @@ struct DeadlineTracker {
 
 ---
 
-## 9. Task Timer Instrumentation
+## 10. Task Timer Instrumentation
 
 Every `ITask` embeds a `Kernel::TaskTimer`. `System::tick()` calls `timer().start()` before and `timer().stop()` after every `task->tick()` — including early-return ticks. The `TaskTimer` maintains:
 
@@ -463,7 +542,7 @@ The bucket width of **512 µs** (2⁹) ensures the index computation `elapsed >>
 
 ---
 
-## 10. Builder Registration API
+## 11. Builder Registration API
 
 ```cpp
 SystemBuilder<Cfg> builder(&app, monitors, monitorCount);
@@ -493,7 +572,7 @@ BuildResult result = builder.build();
 System<Cfg>::run(0);
 ```
 
-### 10.1 Build-time Validation
+### 11.1 Build-time Validation
 
 `build()` performs these checks before populating `System<Cfg>`:
 
@@ -501,35 +580,40 @@ System<Cfg>::run(0);
 2. No duplicate task pointer across cores.
 3. Each task's `validateDependencies()` returns true.
 4. At least one core has tasks (or kernel tasks are being created).
+5. ICrunchTask cannot be placed on Core 0.
+6. A CRUNCH core must have exactly one ICrunchTask and zero other scheduled tasks.
+7. CRUNCH requires `kCoreCount >= 2`.
+8. `crunchTask->crunchPeriodUs()` ≥ `CfgMinSchedulePeriodUs<Cfg>::value`.
 
-### 10.2 Automatic Kernel Task Placement
+### 11.2 Automatic Kernel Task Placement
 
 When `app` is non-null, `build()` creates and pre-registers:
 
 | Task | Core list | Position | Background ring |
 |------|-----------|----------|-----------------|
 | `ScheduledControlTask` | Core 0 | Slot 0 (prepended) | — |
-| `ScheduledCommsTask` | Core 1 (or 0, single-core) | Slot 0 (prepended) | — |
+| `ScheduledCommsTask` | Core 1 (or Core 0 if Core 1 is CRUNCH; or Core 0 single-core) | Slot 0 (prepended) | — |
 | `BackgroundDiagnosticsTask` | *none* | — | Slot 0 (first) |
 
 User tasks added via `addScheduledTask()` follow the kernel scheduled tasks in tick order. User background tasks added via `addBackgroundTask()` are appended to the background ring after `BackgroundDiagnosticsTask`.
 
 ---
 
-## 11. ConfigTraits Extensions
+## 12. ConfigTraits Extensions
 
 New optional config fields added to the `Cfg` struct contract, with SFINAE extractors providing defaults:
 
 | Field | Default | Purpose |
-|-------|---------|---------|
-| `kMinSchedulePeriodUs` | 10 µs | Floor for `IScheduledTask::periodUs()` — enforced at build time |
+|-------|---------|--------|
+| `kMinSchedulePeriodUs` | 10 µs | Floor for `IScheduledTask::periodUs()` and `ICrunchTask::crunchPeriodUs()` — enforced at build time |
 | `kStrictWCET` | `false` | If true, `forceSafeAbort()` on WCET violation (future use) |
 | `kIsrContextBudgetUs[kCoreCount]` | `{0, 0, ...}` | Per-core ISR overhead budget for utilization accounting (future use) |
 | `kMetricsWindowUs` | 60 000 000 (60 s) | Time-based rolling window duration for `TaskTimer`, `SchedulerHealthMetrics`, and `QueueDepthMonitor`. 0 disables windowing. |
+| `kCrunchMaxOverruns` | 10 | Consecutive `maxIterationUs()` overruns on an `ICrunchTask` before `onCrunchAbort()` is called. |
 
 ---
 
-## 12. Testing Coverage
+## 13. Testing Coverage
 
 ### Unit Tests
 
@@ -538,6 +622,7 @@ New optional config fields added to the `Cfg` struct contract, with SFINAE extra
 | `DeadlineTrackerTest` | `test_DeadlineTracker.cpp` | Phase offset, `isDue()`, `advance()`, missed-period skip |
 | `IScheduledTaskTest` | `test_IScheduledTask.cpp` | Type markers, periodUs contract, isIoPending default |
 | `IBackgroundTaskTest` | `test_IBackgroundTask.cpp` | Type markers, maxBudgetUs default |
+| `ICrunchTaskTest` | `test_ICrunchTask.cpp` | Type markers, non-copyable, `onCrunchAbort()` default+override, crunch dispatch, period/WCET values |
 | `MultiRateDataFlowTest` | `test_MultiRateDataFlow.cpp` | Multi-rate task accumulation, drain, sawtooth wrap, rate-limiting edge cases |
 | `IoPendingPatternTest` | `test_IoPendingPattern.cpp` | IO_PENDING state machine: start → poll → read → timeout → recovery |
 | `CfgMinSchedulePeriodUs` | `test_ConfigTraits.cpp` | Default and override values |
@@ -545,6 +630,7 @@ New optional config fields added to the `Cfg` struct contract, with SFINAE extra
 | `CfgIsrContextBudgetUs` | `test_ConfigTraits.cpp` | Default and override |
 | `CfgMetricsWindowUs` | `test_ConfigTraits.cpp` | Default and override |
 | `SystemRun` | `test_SystemRun.cpp` | `run()` exit on stop condition, OR'd conditions, init delegation, telemetry drain wiring, logger accessor, stop condition overflow |
+| `SystemBuilderCrunch` | `test_SystemBuilder.cpp` | CRUNCH core setup: valid placement, Core 0 rejection, duplicate tasks, single-core rejection, period-floor validation, CoreData mode field |
 
 ### System Tests
 

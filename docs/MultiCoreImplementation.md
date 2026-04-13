@@ -39,29 +39,41 @@ Multi-core adds memory-ordering and synchronization constraints. SputterOS handl
 
 ## Core Assignment
 
-### Dual-Core (RP2350, ESP32)
+### Dual-Core: FLAT_LOOP Mode (Default)
 
 ```
-Core 0 (Deterministic)           Core 1 (Best-Effort)
-──────────────────────           ────────────────────
-ControlTask<Cfg>    ← ICriticalTask   CommsTask<Cfg>        ← IAsyncTask
- • evaluateSafety()                    • CLI + CommandParser
- • processCommands()                   • try_push() → queue
- • IUserApplication::tick()            DiagnosticsTask       ← IAsyncTask
-                                        • watchdog kick
-                                        • TaskTimer scan
-                                        • MemoryProfiler
+Core 0 (Deterministic)              Core 1 (Best-Effort)
+──────────────────────              ────────────────────
+ScheduledControlTask<Cfg>           ScheduledCommsTask<Cfg>
+ • evaluateSafety()                   • CLI + CommandParser
+ • processCommands()                  • try_push() → queue
+ • IUserApplication::tick()          BackgroundDiagnosticsTask
+                                       • watchdog kick
+                                       • TaskTimer scan
+                                       • MemoryProfiler
+```
+
+### Dual-Core: CRUNCH Mode (Core 1 Exclusive)
+
+When `builder.core(1).setCrunchTask()` is called, Core 1 runs a bare `ICrunchTask` tight loop instead of the cooperative scheduler. `ScheduledCommsTask` falls back to Core 0.
+
+```
+Core 0 (Deterministic)              Core 1 (CRUNCH)
+──────────────────────              ───────────────
+ScheduledControlTask<Cfg>           ICrunchTask tight loop:
+ScheduledCommsTask<Cfg>  ← fallback   while (active) crunch(now)
+BackgroundDiagnosticsTask            No Phase 2. Blocking I/O permitted.
 ```
 
 ### Core Affinity Rules (Enforced by `SystemBuilder::build()`)
 
 | Task Type | Allowed Cores | Rationale |
 |---|---|---|
-| `ICriticalTask` | Core 0 only | Deterministic, interrupt-free |
-| `IAsyncTask` | Core 1+ only (multi-core) | Tolerant of I/O jitter |
-| User tasks inheriting `ITask` | Any core | Your responsibility |
+| `IScheduledTask` | Any core | Periodic, cooperative |
+| `IBackgroundTask` | Background core (Phase 2) | Best-effort, budget-capped |
+| `ICrunchTask` | Core 1+ only (multi-core) | Exclusive tight loop; blocking I/O allowed within `maxIterationUs()` |
 
-`build()` returns a `BuildResult` failure if affinity is violated.
+`build()` returns a `BuildResult` failure if placement rules are violated.
 
 ---
 
@@ -690,10 +702,57 @@ Watch atomics during queue operations.
 
 ---
 
+## CRUNCH Core Mode
+
+For workloads that require exclusive CPU access and bounded blocking (servo PWM, SPI-based sensor polling, motor controllers), a core can be set to `CoreDispatchMode::CRUNCH` via `CoreBuilder::setCrunchTask()`.
+
+### How It Works
+
+When `System<Cfg>::run(coreId)` is called on a CRUNCH core it executes:
+
+```cpp
+// Simplified — no tick(), no Phase 2:
+while (isActiveState(s_kernelState) && !anyStopConditionFired())
+    core.crunchTask->crunch(s_timer.nowMicros());
+```
+
+The standard Phase 1 cooperative scheduler and Phase 2 background dispatch are **not** invoked on a CRUNCH core.
+
+### Registration
+
+```cpp
+MyServoTask servo;  // implements ICrunchTask
+
+SputterOS::SystemBuilder<MyCfg> builder(&app, monitors, count);
+builder.core(1).setCrunchTask(&servo);
+auto result = builder.build();
+
+// On Core 1:
+System<MyCfg>::run(1);  // bare crunch loop
+```
+
+### Constraints
+
+| Rule | Description |
+|------|-------------|
+| No Core 0 | CRUNCH core must be Core 1 or higher |
+| Exclusive | A CRUNCH core may have no other scheduled tasks |
+| Multi-core only | `kCoreCount >= 2` required |
+| Period floor | `crunchPeriodUs()` ≥ `kMinSchedulePeriodUs` |
+
+### Overrun Detection
+
+`ICrunchTask::maxIterationUs()` declares the expected worst-case execution time for one `crunch()` call. If that bound is exceeded on `kCrunchMaxOverruns` (default 10) consecutive calls, `onCrunchAbort()` is invoked on the task. The crunch loop continues unless the implementation or a stop condition halts it.
+
+See [SchedulingDesign.md §7](SchedulingDesign.md#crunch-core-mode) for the full dispatch specification.
+
+---
+
 ## Summary
 
 - **Dual-core execution** gives true parallelism and lower jitter for safety-critical control.
-- **Standard assignment:** ControlTask on Core 0 (deterministic), CommsTask on Core 1 (I/O).
+- **Standard assignment (FLAT_LOOP):** ControlTask on Core 0 (deterministic), CommsTask + DiagnosticsTask on Core 1.
+- **CRUNCH assignment:** Core 1 runs an exclusive `ICrunchTask` tight loop; CommsTask falls back to Core 0.
 - **Sync mechanism:** `SystemBuilder<Cfg>` provides a built-in `LockFreeQueue<Cfg, N>` accessed via `builder.commandQueue()`. Do not instantiate `LockFreeQueue` directly — its constructor is private.
 - **Memory ordering:** Always use `acquire` on reads, `release` on writes to shared atomics.
 - **ISRs on either core:** Both cores see ISR latches via acquire/release semantics.

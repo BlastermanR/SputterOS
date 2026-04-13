@@ -17,6 +17,7 @@
 #include "MockUserApplication.h"
 #include "sputteros/builder/SystemBuilder.h"
 #include "sputteros/kernel/System.h"
+#include "sputteros/osal/tasks/ICrunchTask.h"
 #include "sputteros/osal/tasks/IScheduledTask.h"
 #include "sputteros/utils/logging/TelemetryLogger.h"
 
@@ -377,4 +378,118 @@ TEST(SystemRun, RunExitsOnKernelStateChange)
 
     // Verify entire lifecycle completed: CONFIGURED → INITIALIZING → RUNNING → SHUTTING_DOWN → SHUTDOWN
     EXPECT_EQ(System<Cfg>::kernelState(), Kernel::KernelState::SHUTDOWN);
+}
+
+// ===========================================================================
+// CRUNCH mode run path (WP-2)
+// ===========================================================================
+
+/**
+ * @brief Multi-core config for CRUNCH run tests.
+ */
+template <int N> struct CrunchRunCfg
+{
+    enum class State : uint8_t
+    {
+        IDLE = 0
+    };
+    enum class CmdID : uint8_t
+    {
+        NONE = 0
+    };
+    struct Command
+    {
+        CmdID   id;
+        uint8_t targetDevice;
+        float   value;
+    };
+    static constexpr int         kMaxCommandsPerTick = 8;
+    static constexpr uint8_t     kMaxValidCommandID  = 0;
+    static constexpr std::size_t kCoreCount          = 2;
+    static constexpr std::size_t kQueueCapacity      = 16;
+};
+
+/**
+ * @brief Crunch task that counts iterations for run-path testing.
+ */
+class CrunchCounterTask : public ICrunchTask
+{
+  public:
+    void init() override { m_initCalled = true; }
+    void tick(SputterMicros) override {}
+
+    void          crunch(SputterMicros) override { ++m_crunchCount; }
+    SputterMicros crunchPeriodUs() const override { return 163; }
+    SputterMicros maxIterationUs() const override { return 200; }
+
+    void onCrunchAbort() override { m_aborted = true; }
+
+    uint32_t crunchCount() const { return m_crunchCount; }
+    bool     initCalled() const { return m_initCalled; }
+    bool     aborted() const { return m_aborted; }
+
+  private:
+    uint32_t m_crunchCount{0};
+    bool     m_initCalled{false};
+    bool     m_aborted{false};
+};
+
+static std::atomic<uint32_t> s_crunchStopTicks{0};
+
+/// @brief run() on a CRUNCH core calls crunch() and exits on stop condition.
+TEST(SystemRun, CrunchCore_CallsCrunchUntilStop)
+{
+    using Cfg = CrunchRunCfg<1>;
+    NiceMock<MockUserApplication<Cfg>> app;
+    NiceMock<MockSafetyMonitor>        monitor;
+    NiceMock<MockStreamReader>         stream;
+    ON_CALL(monitor, isSafe()).WillByDefault(Return(true));
+    std::array<ISafetyMonitor *, 1> monitors = {&monitor};
+
+    CrunchCounterTask  crunchTask;
+    SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
+    builder.setStream(&stream);
+    builder.core(1).setCrunchTask(&crunchTask);
+
+    s_crunchStopTicks.store(0, std::memory_order_relaxed);
+    builder.addStopCondition(
+        []() -> bool
+        {
+            auto count = s_crunchStopTicks.fetch_add(1, std::memory_order_relaxed);
+            return count >= 5;
+        });
+
+    BuildResult result = builder.build();
+    ASSERT_TRUE(result.ok) << result.error;
+
+    // Run core 1 (CRUNCH mode) — should call crunch() multiple times then exit.
+    System<Cfg>::run(1);
+
+    EXPECT_TRUE(crunchTask.initCalled());
+    EXPECT_GT(crunchTask.crunchCount(), 0u);
+}
+
+/// @brief CRUNCH core init() initializes the crunch task.
+TEST(SystemRun, CrunchCore_InitializesCrunchTask)
+{
+    using Cfg = CrunchRunCfg<2>;
+    NiceMock<MockUserApplication<Cfg>> app;
+    NiceMock<MockSafetyMonitor>        monitor;
+    NiceMock<MockStreamReader>         stream;
+    ON_CALL(monitor, isSafe()).WillByDefault(Return(true));
+    std::array<ISafetyMonitor *, 1> monitors = {&monitor};
+
+    CrunchCounterTask  crunchTask;
+    SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
+    builder.setStream(&stream);
+    builder.core(1).setCrunchTask(&crunchTask);
+
+    builder.addStopCondition([]() -> bool { return true; });
+
+    BuildResult result = builder.build();
+    ASSERT_TRUE(result.ok) << result.error;
+
+    EXPECT_FALSE(crunchTask.initCalled());
+    System<Cfg>::run(1);
+    EXPECT_TRUE(crunchTask.initCalled());
 }

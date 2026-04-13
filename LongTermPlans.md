@@ -197,6 +197,15 @@ in C++17 (`<atomic>` is in the freestanding subset per [library.requirements]),
 works on bare-metal ARM Cortex-M, and carries zero runtime overhead beyond
 the instructions themselves.
 
+**Also evaluated (v0.5.0 WP-4 analysis):** A configurable sync abstraction
+layer (atomic vs. mutex/spinlock backend selected by `Cfg`) was considered
+and rejected. All 11 kernel atomics operate on scalar types natively atomic
+on every target. A mutex fallback would violate lock-free, ISR-safe, and
+zero-heap kernel invariants. The one cross-core non-scalar data transfer
+(`AtomicDoubleBuffer<T>`) uses a `CachePolicy` template parameter to handle
+cache coherency on platforms with data caches — this is a narrow, zero-cost
+solution to the actual problem without wrapping `std::atomic` itself.
+
 #### `<cstdint>` / `<cstddef>` / `<limits>`  | Skip
 
 These are freestanding headers by definition (C++ standard §20.5.1.3). They

@@ -103,6 +103,12 @@ class ITask
     virtual bool isBackground() const { return false; }
 
     /**
+     * @brief Scheduling type marker — true if this task is a crunch task.
+     * @return false by default; overridden to true by `ICrunchTask`.
+     */
+    virtual bool isCrunchTask() const { return false; }
+
+    /**
      * @brief Called by the scheduler when this task is being suspended.
      *
      * Override to save state or release shared resources before the
