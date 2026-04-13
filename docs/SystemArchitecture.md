@@ -434,6 +434,7 @@ SputterOS uses **compile-time template parameters**. Define a plain struct satis
 | `kMaxValidCommandID` | `static constexpr uint8_t` | Optional | 255 |
 | `kControlBudgetUs` | `static constexpr uint32_t` | Optional | 10000 (10 ms / 100 Hz) |
 | `kMetricsWindowUs` | `static constexpr uint64_t` | Optional | 60 000 000 (60 s) |
+| `kMaxBackgroundTasks` | `static constexpr std::size_t` | Optional | 16 |
 
 `ConfigValidator<Cfg>` enforces `static_assert` checks at template instantiation.
 
