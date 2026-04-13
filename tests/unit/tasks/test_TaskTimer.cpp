@@ -41,6 +41,7 @@ class TaskTimerTest : public ::testing::Test
         s_timerClock = 0;
         m_timer.setClockSource(timerClock);
         m_timer.reset();
+        m_timer.setMetricsWindowUs(0); // Disable windowing for basic tests
     }
 
     TaskTimer m_timer;
@@ -506,4 +507,179 @@ TEST_F(TaskTimerTest, Percentile_SpreadAcrossBuckets)
     // p90 — should be well into bucket 2
     SputterMicros p90 = m_timer.percentileUs(0.9f);
     EXPECT_GE(p90, 1024u);
+}
+
+// ===========================================================================
+// Rolling window — time-based
+// ===========================================================================
+
+class TaskTimerWindowTest : public ::testing::Test
+{
+  protected:
+    void SetUp() override
+    {
+        s_timerClock = 0;
+        m_timer.setClockSource(timerClock);
+        m_timer.reset();
+        m_timer.setMetricsWindowUs(1'000'000); // 1 s window
+    }
+
+    TaskTimer m_timer;
+};
+
+TEST_F(TaskTimerWindowTest, SetterGetter)
+{
+    EXPECT_EQ(m_timer.metricsWindowUs(), 1'000'000u);
+    m_timer.setMetricsWindowUs(500'000);
+    EXPECT_EQ(m_timer.metricsWindowUs(), 500'000u);
+}
+
+TEST_F(TaskTimerWindowTest, BeforeRotation_ReturnsInProgress)
+{
+    // Record a sample within the window
+    s_timerClock = 100;
+    m_timer.start();
+    s_timerClock = 300;
+    m_timer.stop();
+
+    // No rotation yet — accessors return in-progress values
+    EXPECT_EQ(m_timer.sampleCount(), 1u);
+    EXPECT_EQ(m_timer.maxDuration(), 200u);
+    EXPECT_EQ(m_timer.minDuration(), 200u);
+    EXPECT_FLOAT_EQ(m_timer.getAverageDurationUs(), 200.0f);
+}
+
+TEST_F(TaskTimerWindowTest, Rotation_SnapshotsToReported)
+{
+    // Record samples in window 1 (0 to ~999999)
+    s_timerClock = 100;
+    m_timer.start();
+    s_timerClock = 400; // 300 µs
+    m_timer.stop();
+
+    s_timerClock = 500;
+    m_timer.start();
+    s_timerClock = 600; // 100 µs
+    m_timer.stop();
+
+    // Advance past window boundary — the triggering sample is included
+    // in the old window before rotation snapshots.
+    s_timerClock = 1'100'000;
+    m_timer.start();
+    s_timerClock = 1'100'050; // 50 µs
+    m_timer.stop();
+
+    // Reported window contains all 3 samples: 300, 100, 50
+    EXPECT_EQ(m_timer.sampleCount(), 3u);
+    EXPECT_EQ(m_timer.maxDuration(), 300u);
+    EXPECT_EQ(m_timer.minDuration(), 50u);
+    EXPECT_FLOAT_EQ(m_timer.getAverageDurationUs(), 150.0f); // (300+100+50)/3
+}
+
+TEST_F(TaskTimerWindowTest, SecondRotation_OverwritesReported)
+{
+    // Window 1: one sample of 300 µs
+    s_timerClock = 100;
+    m_timer.start();
+    s_timerClock = 400;
+    m_timer.stop();
+
+    // Trigger first rotation (800 µs sample included in window 1)
+    s_timerClock = 1'100'000;
+    m_timer.start();
+    s_timerClock = 1'100'800; // 800 µs
+    m_timer.stop();
+    // Window 1 reported: count=2, max=800, min=300, avg=550
+
+    // Window 2: add a 50 µs mid-window sample first
+    s_timerClock = 1'200'000;
+    m_timer.start();
+    s_timerClock = 1'200'050; // 50 µs
+    m_timer.stop();
+
+    // Trigger second rotation (10 µs sample included in window 2)
+    s_timerClock = 2'200'000;
+    m_timer.start();
+    s_timerClock = 2'200'010;
+    m_timer.stop();
+
+    // Window 2 reported: samples 50 + 10 = 2 samples
+    EXPECT_EQ(m_timer.sampleCount(), 2u);
+    EXPECT_EQ(m_timer.maxDuration(), 50u);
+    EXPECT_EQ(m_timer.minDuration(), 10u);
+    EXPECT_FLOAT_EQ(m_timer.getAverageDurationUs(), 30.0f); // (50+10)/2
+}
+
+TEST_F(TaskTimerWindowTest, Rotation_HistogramSnapshotted)
+{
+    // Sample in bucket 0 [0, 512)
+    s_timerClock = 100;
+    m_timer.start();
+    s_timerClock = 300; // 200 µs → bucket 0
+    m_timer.stop();
+
+    // Trigger rotation (10 µs → also bucket 0, included in old window)
+    s_timerClock = 1'100'000;
+    m_timer.start();
+    s_timerClock = 1'100'010;
+    m_timer.stop();
+
+    const uint32_t *hist = m_timer.histogram();
+    EXPECT_EQ(hist[0], 2u); // two samples from window 1 in bucket 0
+}
+
+TEST_F(TaskTimerWindowTest, Rotation_OverrunsAndMissesSnapshotted)
+{
+    m_timer.recordOverrun();
+    m_timer.recordOverrun();
+    m_timer.recordDeadlineMiss();
+
+    // Trigger rotation with a sample past the window
+    s_timerClock = 1'100'000;
+    m_timer.start();
+    s_timerClock = 1'100'010;
+    m_timer.stop();
+
+    EXPECT_EQ(m_timer.overrunCount(), 2u);
+    EXPECT_EQ(m_timer.deadlineMissCount(), 1u);
+}
+
+TEST_F(TaskTimerWindowTest, DisabledWindow_NeverRotates)
+{
+    m_timer.setMetricsWindowUs(0);
+
+    s_timerClock = 100;
+    m_timer.start();
+    s_timerClock = 400;
+    m_timer.stop();
+
+    // Way past any reasonable window
+    s_timerClock = 100'000'000;
+    m_timer.start();
+    s_timerClock = 100'000'200;
+    m_timer.stop();
+
+    // Both samples counted in one accumulator (no rotation)
+    EXPECT_EQ(m_timer.sampleCount(), 2u);
+    EXPECT_EQ(m_timer.maxDuration(), 300u);
+}
+
+TEST_F(TaskTimerWindowTest, Reset_ClearsWindowState)
+{
+    // Record and rotate
+    s_timerClock = 100;
+    m_timer.start();
+    s_timerClock = 400;
+    m_timer.stop();
+
+    s_timerClock = 1'100'000;
+    m_timer.start();
+    s_timerClock = 1'100'050;
+    m_timer.stop();
+
+    m_timer.reset();
+
+    EXPECT_EQ(m_timer.sampleCount(), 0u);
+    EXPECT_EQ(m_timer.maxDuration(), 0u);
+    EXPECT_FLOAT_EQ(m_timer.getAverageDurationUs(), 0.0f);
 }

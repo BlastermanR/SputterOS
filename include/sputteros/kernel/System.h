@@ -59,8 +59,10 @@
 #include "sputteros/utils/PerformanceSnapshot.h"
 #include "sputteros/utils/QueueDepthMonitor.h"
 #include "sputteros/utils/logging/ErrorLogger.h"
+#include "sputteros/utils/logging/TelemetryLogger.h"
 
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <optional>
 #include <type_traits>
@@ -125,9 +127,18 @@ template <typename Cfg> class System
     static_assert(ConfigValidator<Cfg>::value, "Invalid SputterOS configuration.");
 
   public:
-    static constexpr std::size_t kCoreCount     = Cfg::kCoreCount;
-    static constexpr std::size_t kQueueCapacity = Cfg::kQueueCapacity;
-    static constexpr bool        kMultiCore     = (kCoreCount >= 2);
+    static constexpr std::size_t kCoreCount         = Cfg::kCoreCount;
+    static constexpr std::size_t kQueueCapacity     = Cfg::kQueueCapacity;
+    static constexpr bool        kMultiCore         = (kCoreCount >= 2);
+    static constexpr std::size_t kMaxStopConditions = 8;
+
+    /**
+     * @brief User-supplied predicate evaluated each tick by `run()`.
+     *
+     * Return `true` to signal the kernel to stop. Multiple stop conditions
+     * are OR'd — any one returning `true` terminates the run loop.
+     */
+    using StopConditionFn = bool (*)();
 
     /**
      * @brief Conditional MultiCoreSync type.
@@ -222,6 +233,8 @@ template <typename Cfg> class System
         // Transition to RUNNING after tasks initialized
         if (s_kernelState == Kernel::KernelState::INITIALIZING)
             transitionTo(Kernel::KernelState::RUNNING);
+
+        s_coreInitialized[coreId] = true;
     }
 
     /**
@@ -267,18 +280,79 @@ template <typename Cfg> class System
         }
 
         SputterMicros tickEndTime = s_timer.nowMicros();
-        s_utilTracker[coreId].recordTickEnd(busyAccum);
+        s_utilTracker[coreId].recordTickEnd(tickEndTime, busyAccum);
 
         // Record gap time (wall time - busy time) for scheduler health
         SputterMicros wallTime = (tickEndTime >= systemTimeMicros) ? (tickEndTime - systemTimeMicros) : 0;
         SputterMicros gapUs    = (wallTime >= busyAccum) ? (wallTime - busyAccum) : 0;
-        s_schedulerHealth.recordGap(gapUs);
+        s_schedulerHealth.recordGap(gapUs, tickEndTime);
 
         // Sample queue depth once per tick (on core 0 to avoid double-counting)
         if (coreId == 0)
         {
-            s_queueMonitor.sample(s_commandQueue.size());
+            s_queueMonitor.sample(s_commandQueue.size(), tickEndTime);
         }
+    }
+
+    // =====================================================================
+    // Blocking Run Loop
+    // =====================================================================
+
+    /**
+     * @brief Execute the kernel run loop on a specific core until exit.
+     *
+     * Internalizes the entire runtime lifecycle for one core:
+     *   1. Signals `MultiCoreSync::setInit(coreId)`.
+     *   2. Calls `init(coreId)` if this core has not been initialized.
+     *   3. Waits at `startupBarrier()` until all active cores are ready.
+     *   4. Ticks in a busy-wait loop until any registered stop condition
+     *      fires or the kernel leaves an active state.
+     *   5. Transitions to SHUTTING_DOWN → SHUTDOWN (best-effort, first
+     *      core to reach this point performs the transition).
+     *   6. Waits at `shutdownBarrier()` for peer cores to finish.
+     *
+     * For single-core systems, barriers are no-ops.
+     * For multi-core, each core must call `run()` from its own thread
+     * — the kernel does not launch threads internally.
+     *
+     * @param coreId Zero-based core identifier (0 for main core).
+     */
+    static void run(std::size_t coreId)
+    {
+        assert(s_built && "Call SystemBuilder::build() before System::run()");
+        if (coreId >= kCoreCount)
+            return;
+
+        // Phase 1: Multi-core init signaling
+        s_sync.setInit(coreId);
+
+        // Phase 2: Initialize tasks if not already done
+        if (!s_coreInitialized[coreId])
+        {
+            init(coreId);
+        }
+
+        // Phase 3: Wait for all cores to be ready
+        s_sync.startupBarrier(coreId, std::chrono::milliseconds{2000});
+
+        // Phase 4: Busy-wait tick loop
+        while (isActiveState(s_kernelState) && !anyStopConditionFired())
+        {
+            tick(coreId, s_timer.nowMicros());
+        }
+
+        // Phase 5: Kernel state shutdown (best-effort, first core wins)
+        if (s_kernelState == Kernel::KernelState::RUNNING)
+        {
+            transitionTo(Kernel::KernelState::SHUTTING_DOWN);
+        }
+        if (s_kernelState == Kernel::KernelState::SHUTTING_DOWN)
+        {
+            transitionTo(Kernel::KernelState::SHUTDOWN);
+        }
+
+        // Phase 6: Multi-core shutdown barrier
+        s_sync.shutdownBarrier(coreId, std::chrono::milliseconds{2000});
     }
 
     // =====================================================================
@@ -327,6 +401,17 @@ template <typename Cfg> class System
      * @return Reference to the embedded `ErrorLogger`.
      */
     static ErrorLogger &errorLogger() { return s_errorLogger; }
+
+    /**
+     * @brief Access the kernel-owned telemetry logger.
+     *
+     * Tasks and user code log human-readable status messages here.
+     * `BackgroundDiagnosticsTask` drains this logger each tick if
+     * a drain callback was registered via `SystemBuilder::setTelemetryDrain()`.
+     *
+     * @return Reference to the embedded `TelemetryLogger`.
+     */
+    static TelemetryLogger &telemetryLogger() { return s_telemetryLogger; }
 
     /**
      * @brief Access the kernel-owned memory profiler.
@@ -525,6 +610,45 @@ template <typename Cfg> class System
         s_queueMonitor.reset();
         s_schedulerHealth.reset();
         s_kernelState = Kernel::KernelState::UNCONFIGURED;
+
+        // Reset run() API state
+        s_telemetryLogger.clear();
+        s_stopConditionCount = 0;
+        for (auto &fn : s_stopConditions)
+            fn = nullptr;
+        s_drainFn  = nullptr;
+        s_drainCtx = nullptr;
+        for (auto &init : s_coreInitialized)
+            init = false;
+    }
+
+    // =====================================================================
+    // Run-Loop Helpers (private)
+    // =====================================================================
+
+    /**
+     * @brief Check whether the kernel is in a state where ticking is valid.
+     * @param state Current kernel lifecycle state.
+     * @return true for RUNNING, SUSPENDING, or SUSPENDED.
+     */
+    static bool isActiveState(Kernel::KernelState state)
+    {
+        return state == Kernel::KernelState::RUNNING || state == Kernel::KernelState::SUSPENDING ||
+               state == Kernel::KernelState::SUSPENDED;
+    }
+
+    /**
+     * @brief Evaluate all registered stop condition predicates.
+     * @return true if any stop condition returned true.
+     */
+    static bool anyStopConditionFired()
+    {
+        for (std::size_t i = 0; i < s_stopConditionCount; ++i)
+        {
+            if (s_stopConditions[i] && s_stopConditions[i]())
+                return true;
+        }
+        return false;
     }
 
     // =====================================================================
@@ -537,6 +661,7 @@ template <typename Cfg> class System
     inline static WatchdogSync<kCoreCount>           s_watchdog{};
     inline static SyncType                           s_sync{};
     inline static ErrorLogger                        s_errorLogger{};
+    inline static TelemetryLogger                    s_telemetryLogger{};
     inline static MemoryProfiler                     s_memProfiler{};
     inline static SystemTimer                        s_timer{};
     inline static Kernel::CoreUtilizationTracker     s_utilTracker[kCoreCount]{};
@@ -573,6 +698,16 @@ template <typename Cfg> class System
     inline static bool                s_built{false};
     inline static SputterMicros       s_lastTime[kCoreCount]{};
     inline static Kernel::KernelState s_kernelState{Kernel::KernelState::UNCONFIGURED};
+
+    // =====================================================================
+    // Run API State
+    // =====================================================================
+
+    inline static StopConditionFn               s_stopConditions[kMaxStopConditions]{};
+    inline static std::size_t                   s_stopConditionCount{0};
+    inline static TelemetryLogger::DrainWriteFn s_drainFn{nullptr};
+    inline static void                         *s_drainCtx{nullptr};
+    inline static bool                          s_coreInitialized[kCoreCount]{};
 
     // =====================================================================
     // Kernel State Machine

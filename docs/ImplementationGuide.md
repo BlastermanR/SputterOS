@@ -421,6 +421,7 @@ const SputterOS::BuildResult result = builder.build();
 
 ```cpp
 #include "sputteros/builder/SystemBuilder.h"
+#include "sputteros/kernel/System.h"
 #include "sputteros/logic/InterlockManager.h"
 #include <array>
 
@@ -431,6 +432,11 @@ const SputterOS::BuildResult result = builder.build();
 #include "InterlockMonitor.h"
 
 using Cfg = MyConfig;
+
+/// @brief Drain callback — writes telemetry bytes to USB.
+static void usbWrite(const uint8_t *data, std::size_t len, void *ctx) {
+    static_cast<SputterOS::IStream *>(ctx)->write(data, len);
+}
 
 int main() {
     // 1. Construct HAL — hardware drivers
@@ -451,6 +457,15 @@ int main() {
     SputterOS::SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
     builder.setStream(&usbStream);
     builder.setWatchdogKick([]() { /* kick hardware watchdog */ });
+    builder.setClockSource(platformGetTimeMicros);
+
+    // Wire telemetry drain — BackgroundDiagnosticsTask calls this each tick
+    builder.setTelemetryDrain(usbWrite, &usbStream);
+
+    // Register stop conditions (OR'd — any one triggers exit)
+    builder.addStopCondition([]() -> bool {
+        return /* your shutdown condition */;
+    });
 
     // Optional: add custom user tasks
     // builder.core(0).addScheduledTask(&myCustomTask);
@@ -463,22 +478,54 @@ int main() {
         while (true) {}
     }
 
-    // 5. Initialise all tasks
-    SputterOS::System<Cfg>::init(0);
-
-    // 6. Main control loop
-    while (true) {
-        const SputterOS::SputterMicros now = platformGetTimeMicros();
-        SputterOS::System<Cfg>::tick(0, now);
-    }
+    // 5. Run the kernel — blocks until a stop condition fires
+    SputterOS::System<Cfg>::run(0);
 }
 ```
 
-**Construction order:** HAL → Safety adapters → `IUserApplication` → `SystemBuilder` → setStream/setWatchdogKick → build() → `System::init()` → tick loop.
+**Construction order:** HAL → Safety adapters → `IUserApplication` → `SystemBuilder` → setStream / setWatchdogKick / setClockSource / setTelemetryDrain / addStopCondition → build() → `System::run()`.
 
 All dependencies must outlive `System` static data.
 
-For multi-core setup, see [Multi-Core Implementation](MultiCoreImplementation.md).
+### Multi-Core Setup
+
+For dual-core builds, each core calls `run()` from its own thread. You must
+provide a platform-specific `IMutex` implementation to guard the shared
+`TelemetryLogger` across cores.
+
+```cpp
+#include "sputteros/osal/sync/IMutex.h"
+#include <mutex>
+#include <thread>
+
+// Example: wraps std::timed_mutex for bounded-wait semantics
+class TimedMutexAdapter final : public SputterOS::IMutex {
+  public:
+    bool lock(std::chrono::milliseconds timeout) override
+    { return m_mtx.try_lock_for(timeout); }
+    bool try_lock() override { return m_mtx.try_lock(); }
+    void unlock() override { m_mtx.unlock(); }
+  private:
+    std::timed_mutex m_mtx;
+};
+
+// Guard the shared TelemetryLogger for cross-core access
+TimedMutexAdapter telemetryMutex;
+builder.setTelemetryMutex(&telemetryMutex);
+
+// ... build() ...
+
+std::thread core1([]() { SputterOS::System<Cfg>::run(1); });
+SputterOS::System<Cfg>::run(0);
+core1.join();
+```
+
+For FreeRTOS, wrap `xSemaphoreTake`/`xSemaphoreGive` with `pdMS_TO_TICKS`.
+For Pico SDK, wrap `mutex_enter_timeout_ms`/`mutex_exit`.
+
+`run()` internalises the full lifecycle: `setInit()` → `init()` → `startupBarrier()` → tick loop → `SHUTTING_DOWN` → `SHUTDOWN` → `shutdownBarrier()`.
+
+For the complete multi-core synchronisation design, see [Multi-Core Implementation](MultiCoreImplementation.md).
 
 ---
 
@@ -593,10 +640,11 @@ sputterctl repl --port COM3
 
 ## TelemetryLogger
 
-`TelemetryLogger` buffers timestamped human-readable messages from any task and drains via a write callback:
+`System<Cfg>` owns a kernel-wide `TelemetryLogger` instance accessed via `System<Cfg>::telemetryLogger()`. User tasks log to it during their tick, and `BackgroundDiagnosticsTask` automatically drains it each tick through the write callback registered via `SystemBuilder::setTelemetryDrain()`.
 
 ```cpp
-SputterOS::TelemetryLogger telemetry;
+// Access the kernel-owned logger from any task
+SputterOS::TelemetryLogger &telemetry = SputterOS::System<Cfg>::telemetryLogger();
 
 // Log from any task
 telemetry.log(SputterOS::TelemetryLogger::TaskID::CONTROL,
@@ -604,12 +652,17 @@ telemetry.log(SputterOS::TelemetryLogger::TaskID::CONTROL,
               SputterOS::TelemetryLogger::Verbosity::INFO,
               systemTimeMs);
 
-// Drain via callback (call once per tick in CommsTask)
-static void usbWrite(const uint8_t *data, std::size_t len, void *ctx) {
-    static_cast<IStream *>(ctx)->write(data, len);
-}
-telemetry.drain(usbWrite, usbStream);
+// Drain is wired automatically by the builder:
+// builder.setTelemetryDrain(writeFn, ctx);
 // Output: [10200][ControlTask] Pressure stable at 1e-5 Torr\n
+```
+
+For multi-core builds, guard the shared logger with a platform `IMutex`:
+```cpp
+// Implement IMutex for your platform (e.g. wrapping std::timed_mutex,
+// FreeRTOS xSemaphore, or Pico SDK mutex_enter_timeout_ms).
+TimedMutexAdapter telemetryMutex;
+builder.setTelemetryMutex(&telemetryMutex);
 ```
 
 | Feature | Detail |

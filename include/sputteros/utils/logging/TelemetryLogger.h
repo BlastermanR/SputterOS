@@ -200,6 +200,17 @@ class TelemetryLogger
      */
     void clear();
 
+    /**
+     * @brief Set the mutex guard after construction.
+     *
+     * Allows kernel-owned `inline static` instances (default-constructed
+     * without a mutex) to be guarded later when the builder discovers
+     * a multi-core configuration requires it.
+     *
+     * @param guard Pointer to a platform mutex (lifetime must exceed the logger).
+     */
+    void setMutex(IMutex *guard) { m_guard = guard; }
+
   private:
     // -----------------------------------------------------------------------
     // Internal helpers

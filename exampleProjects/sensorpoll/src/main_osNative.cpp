@@ -44,13 +44,11 @@
 #include "sputteros/kernel/System.h"
 #include "sputteros/kernel/interfaces/ISafetyMonitor.h"
 #include "sputteros/osal/SputterTime.h"
-#include "sputteros/utils/logging/TelemetryLogger.h"
 
 #include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <thread>
 
 /// @brief Drain callback — writes telemetry text to stdout.
 static void stdoutWrite(const uint8_t *data, std::size_t len, void * /*ctx*/) { std::fwrite(data, 1, len, stdout); }
@@ -80,18 +78,12 @@ int main(int argc, char *argv[])
     // -- User application (permanently IDLE) --------------------------------
     SensorPoll::SensorPollApplication app;
 
-    // -- Diagnostics infrastructure -----------------------------------------
-    TelemetryLogger telemetry;
-
     // -- Simulated ADC with 15 ms conversion delay --------------------------
-    // Conversion delay (15 ms) < polling period (50 ms), so the ADC
-    // completes within 1 extra tick after IO_PENDING.  The task
-    // typically sees: tick 1 → start conversion → tick 2 → ready → read.
     SensorPoll::SimulatedADC adc(15'000, SensorPoll::platformGetTimeMicros);
 
-    // -- User tasks ---------------------------------------------------------
-    SensorPoll::AdcPollTask   adcTask(telemetry, adc);
-    SensorPoll::SensorLogTask logTask(telemetry, adcTask);
+    // -- User tasks (write to kernel-owned TelemetryLogger) -----------------
+    SensorPoll::AdcPollTask   adcTask(System<Cfg>::telemetryLogger(), adc);
+    SensorPoll::SensorLogTask logTask(System<Cfg>::telemetryLogger(), adcTask);
 
     // -- Select active stream (TCP or stdout) -------------------------------
     SputterOS::IStream *activeStream = (tcpPort > 0) ? static_cast<SputterOS::IStream *>(&tcpStream)
@@ -99,11 +91,24 @@ int main(int argc, char *argv[])
     if (tcpPort > 0 && !tcpStream.startAccept())
         return 1;
 
+    // -- Stop condition: run for ~1 second unless --forever ------------------
+    static constexpr uint32_t kRunMs = 1100;
+
+    using WallClock     = std::chrono::steady_clock;
+    static auto s_endAt = WallClock::now() + std::chrono::milliseconds{kRunMs};
+
     // -- Build the kernel ---------------------------------------------------
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
     builder.setStream(activeStream);
     builder.setClockSource(SensorPoll::platformGetTimeMicros);
     builder.setWatchdogKick(nullptr);
+    builder.setTelemetryDrain(stdoutWrite, nullptr);
+
+    // Register stop condition (skipped when --forever)
+    if (!forever)
+    {
+        builder.addStopCondition([]() -> bool { return WallClock::now() >= s_endAt; });
+    }
 
     // Register the ADC polling task as a scheduled task.
     builder.core(0).addScheduledTask(&adcTask);
@@ -118,26 +123,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // -- Initialise all tasks -----------------------------------------------
-    System<Cfg>::init(0);
-
-    // -- Main loop ----------------------------------------------------------
-    // Run for ~1 second — yields ~20 ADC readings at 20 Hz,
-    // or indefinitely when launched with --forever.
-    static constexpr uint32_t kRunMs = 1100;
-
-    using WallClock  = std::chrono::steady_clock;
-    const auto endAt = WallClock::now() + std::chrono::milliseconds{kRunMs};
-
-    while (forever || WallClock::now() < endAt)
-    {
-        const SputterMicros now = SensorPoll::platformGetTimeMicros();
-
-        System<Cfg>::tick(0, now);
-        telemetry.drain(stdoutWrite);
-
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
-    }
+    // -- Run the kernel (blocks until stop condition fires) -----------------
+    System<Cfg>::run(0);
 
     // -- Final summary ------------------------------------------------------
     std::printf("\n--- SensorPoll Summary ---\n");

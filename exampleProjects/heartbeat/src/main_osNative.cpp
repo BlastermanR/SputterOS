@@ -3,7 +3,7 @@
  * @brief OS-native entry point for the HeartBeat system test.
  *
  * Constructs and runs a complete SputterOS microkernel on the host OS
- * using the `SystemBuilder` declarative API and `System` runtime API:
+ * using the `SystemBuilder` declarative API and `System::run()`:
  *
  * @code
  *   HeartbeatApplication app;
@@ -12,18 +12,18 @@
  *
  *   SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
  *   builder.setStream(&stdoutStream);
- *   builder.setWatchdogKick(nullptr);
+ *   builder.setTelemetryDrain(stdoutWrite, nullptr);
+ *   builder.addStopCondition(stopFn);
  *   builder.core(0).addScheduledTask(&pulseTask);
  *   builder.build();
  *
- *   System<Cfg>::init(0);
- *   while (running) { System<Cfg>::tick(0, now); }
+ *   System<Cfg>::run(0);
  * @endcode
  *
  * The kernel internally creates and manages:
  *  - `ScheduledControlTask<HeartbeatConfig>`  — safety loop (Core 0)
  *  - `ScheduledCommsTask<HeartbeatConfig>`    — CLI bridge over stdout stream (Core 0)
- *  - `BackgroundDiagnosticsTask`               — health monitor (Core 0)
+ *  - `BackgroundDiagnosticsTask`               — health monitor + telemetry drain (Core 0)
  *
  * The user adds one custom task:
  *  - `PulseTask` — emits "Pulse #N" every 500 ms via TelemetryLogger
@@ -43,13 +43,11 @@
 #include "sputteros/kernel/System.h"
 #include "sputteros/kernel/interfaces/ISafetyMonitor.h"
 #include "sputteros/osal/SputterTime.h"
-#include "sputteros/utils/logging/TelemetryLogger.h"
 
 #include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <thread>
 
 /// @brief Drain callback — writes telemetry text to stdout.
 static void stdoutWrite(const uint8_t *data, std::size_t len, void * /*ctx*/) { std::fwrite(data, 1, len, stdout); }
@@ -79,13 +77,8 @@ int main(int argc, char *argv[])
     // -- User application (permanently IDLE — no real process) --------------
     Heartbeat::HeartbeatApplication app;
 
-    // -- Diagnostics infrastructure -----------------------------------------
-    TelemetryLogger telemetry;
-    // ErrorLogger and MemoryProfiler are now kernel-owned by SystemBuilder.
-    // Per-task timing is handled by kernel-owned TaskTimers.
-
-    // -- Custom user task ---------------------------------------------------
-    Heartbeat::PulseTask pulseTask(telemetry);
+    // -- Custom user task (writes to kernel-owned TelemetryLogger) ----------
+    Heartbeat::PulseTask pulseTask(System<Cfg>::telemetryLogger());
 
     // -- Select active stream (TCP or stdout) -------------------------------
     SputterOS::IStream *activeStream = (tcpPort > 0) ? static_cast<SputterOS::IStream *>(&tcpStream)
@@ -93,11 +86,26 @@ int main(int argc, char *argv[])
     if (tcpPort > 0 && !tcpStream.startAccept())
         return 1;
 
+    // -- Stop condition: exit after kNumPulses unless --forever --------------
+    static constexpr uint32_t kNumPulses = 5;
+    static constexpr uint32_t kDrainMs   = 100;
+
+    using WallClock     = std::chrono::steady_clock;
+    static auto s_endAt = WallClock::now() + std::chrono::milliseconds{
+                                                 (kNumPulses - 1) * Heartbeat::PulseTask::kPulseIntervalMs + kDrainMs};
+
     // -- Build the kernel ---------------------------------------------------
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
     builder.setStream(activeStream);
     builder.setClockSource(Heartbeat::platformGetTimeMicros);
     builder.setWatchdogKick(nullptr);
+    builder.setTelemetryDrain(stdoutWrite, nullptr);
+
+    // Register stop condition (skipped when --forever)
+    if (!forever)
+    {
+        builder.addStopCondition([]() -> bool { return WallClock::now() >= s_endAt; });
+    }
 
     // Add the custom user task to core 0
     builder.core(0).addScheduledTask(&pulseTask);
@@ -109,31 +117,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // -- Initialise all tasks via the System --------------------------------
-    System<Cfg>::init(0);
-
-    // -- Main loop ----------------------------------------------------------
-    // Run until kNumPulses heartbeats have been emitted (one every 500 ms),
-    // or indefinitely when launched with --forever.
-    static constexpr uint32_t kNumPulses = 5;
-    static constexpr uint32_t kDrainMs   = 100;
-
-    using WallClock  = std::chrono::steady_clock;
-    const auto endAt = WallClock::now() +
-                       std::chrono::milliseconds{(kNumPulses - 1) * Heartbeat::PulseTask::kPulseIntervalMs + kDrainMs};
-
-    while (forever || WallClock::now() < endAt)
-    {
-        const SputterMicros now = Heartbeat::platformGetTimeMicros();
-
-        // Tick every task on core 0 via the System
-        System<Cfg>::tick(0, now);
-
-        // Drain any buffered telemetry lines to stdout each cycle.
-        telemetry.drain(stdoutWrite);
-
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
-    }
+    // -- Run the kernel (blocks until stop condition fires) -----------------
+    System<Cfg>::run(0);
 
     return 0;
 }

@@ -23,7 +23,11 @@ Documents the implemented scheduling model: task type hierarchy, dispatch algori
 
 ## 1. Overview
 
-SputterOS dispatches tasks through a **flat-loop cooperative scheduler** driven from the platform's main loop. Each call to `System<Cfg>::tick(coreId, now)` iterates all tasks registered on that core and calls `task->tick(now)` on each in declaration order. Timer instrumentation wraps every dispatch for post-hoc observability.
+SputterOS dispatches tasks through a **flat-loop cooperative scheduler**. The primary entry point is `System<Cfg>::run(coreId)`, which internalises the full lifecycle: init → startup barrier → tick loop → shutdown. Internally, each iteration calls `System<Cfg>::tick(coreId, now)` which iterates all tasks registered on that core and calls `task->tick(now)` on each in declaration order. Timer instrumentation wraps every dispatch for post-hoc observability.
+
+The `run()` method exits when any user-registered stop condition fires (`StopConditionFn` — registered via `SystemBuilder::addStopCondition()`) or the kernel leaves an active state. Multiple stop conditions are OR'd.
+
+For advanced use, `tick()` remains public for test harnesses and custom run loops, but production code should use `run()`.
 
 Scheduling behaviour — *which* task does work on a given tick — is **task-internal**. Each `IScheduledTask` subclass implements its own period check (`now - m_lastTick >= periodUs`) and returns early when the period has not elapsed. The kernel loop is oblivious to whether a task did real work or returned immediately; it always calls `tick()` and records the duration.
 
@@ -115,7 +119,7 @@ static void tick(std::size_t coreId, SputterMicros now)
         s_errorLogger.log(ErrorCode::TIMER_ROLLOVER, now, 0.0f);
     s_lastTime[coreId] = now;
 
-    // 3. Record tick start for utilization (tick-to-tick wall time)
+    // 3. Record tick start for utilization tracking
     s_utilTracker[coreId].recordTickStart(now);
 
     // 4. Flat task loop — all tasks on this core, in declaration order
@@ -132,8 +136,9 @@ static void tick(std::size_t coreId, SputterMicros now)
         }
     }
 
-    // 5. Record busy time; utilization = busyAccum / wall-time
-    s_utilTracker[coreId].recordTickEnd(busyAccum);
+    // 5. Record tick end; utilization = busyAccum / (tickEnd - tickStart)
+    SputterMicros tickEnd = s_timer.nowMicros();
+    s_utilTracker[coreId].recordTickEnd(tickEnd, busyAccum);
 }
 ```
 
@@ -148,18 +153,18 @@ static void tick(std::size_t coreId, SputterMicros now)
 
 ```mermaid
 sequenceDiagram
-    participant Main as main() loop
+    participant Run as System&lt;Cfg&gt;::run()
     participant Sys as System&lt;Cfg&gt;::tick()
     participant SCT as ScheduledControlTask
     participant SCM as ScheduledCommsTask
     participant BDT as BackgroundDiagnosticsTask
     participant User as User IScheduledTask(s)
 
-    Main->>Sys: tick(0, now)
+    Run->>Sys: tick(0, now)
     Sys->>SCT: timer.start() → tick(now) → timer.stop()
     SCT->>SCT: evaluateSafety() → processCommands() → app.tick()
     Sys->>BDT: timer.start() → tick(now) → timer.stop()
-    BDT->>BDT: watchdogKick(), scan timers
+    BDT->>BDT: watchdogKick(), scan timers, drain telemetry
     Sys->>User: timer.start() → tick(now) → timer.stop()
     User->>User: rate-limit check → do work or return
 ```
@@ -340,14 +345,17 @@ Every `ITask` embeds a `Kernel::TaskTimer`. `System::tick()` calls `timer().star
 | Minimum tick duration | `minDuration()` | µs; initialized to `UINT64_MAX` |
 | Maximum tick duration | `maxDuration()` | µs |
 | Rolling average duration | `getAverageDurationUs()` | Returns 0 if no samples |
-| Sample count | `sampleCount()` | `uint32_t`; wraps after ~4.3 B ticks |
+| Sample count | `sampleCount()` | `uint32_t` |
 | Over-budget flag | `isOverBudget(budgetUs)` | Compares `lastDuration()` to budget |
 | Overrun count | `overrunCount()` | Incremented by `BackgroundDiagnosticsTask` |
 | Deadline-miss count | `deadlineMissCount()` | Incremented for period violations |
 | Duration histogram | `histogram()` | 8 buckets × 512 µs — see below |
 | Approximate percentile | `percentileUs(p)` | Linear interpolation within bucket |
+| Metrics window | `metricsWindowUs()` / `setMetricsWindowUs()` | Time-based rolling window duration (µs). Default 60 s. 0 disables. |
 
 `BackgroundDiagnosticsTask` reads these metrics to detect WCET violations. In tests, `task.timer().sampleCount() > 0` confirms that the task was dispatched at all.
+
+All windowed accessors (`minDuration`, `maxDuration`, `getAverageDurationUs`, `sampleCount`, `overrunCount`, `deadlineMissCount`, `histogram`) return the last **complete** window’s values once a rotation has occurred. Before the first rotation they fall through to the in-progress accumulators. The window duration is propagated by `SystemBuilder` from `CfgMetricsWindowUs<Cfg>::value` (default 60 s).
 
 ### 9.1 Histogram Distribution
 
@@ -372,7 +380,9 @@ The bucket width of **512 µs** (2⁹) ensures the index computation `elapsed >>
 
 `System<Cfg>::snapshot()` aggregates all per-task timers together with per-core utilization (`CoreUtilizationTracker`), scheduler health (`SchedulerHealthMetrics`), queue depth (`QueueDepthMonitor`), and memory profiling into a `PerformanceSnapshot` POD value. The struct is ~1.2 KiB on the stack for a 16-task, 4-core configuration — call `snapshot()` from a background or top-level context rather than from inside a time-critical tick.
 
-`CoreUtilizationTracker` reports **true CPU load**: wall time is the interval between consecutive `recordTickStart()` calls, so it includes any sleep or idle gap between ticks. This gives an accurate measure of how much of the CPU's available time tasks actually consume (e.g., a 5 µs dispatch over a 1 ms tick period → ~0.5% utilization).
+`SchedulerHealthMetrics` and `QueueDepthMonitor` use the same **time-based rolling window** as `TaskTimer`. `System::tick()` passes the current timestamp to `recordGap(gapUs, nowUs)` and `sample(depth, nowUs)` so that window rotation is driven by wall-clock time. Accessors on both classes return the last complete window once a rotation has occurred.
+
+`CoreUtilizationTracker` reports **dispatch-window utilization**: wall time is the interval from `recordTickStart()` to `recordTickEnd()` within the same tick, so it excludes sleep or idle gaps between ticks. This answers "how much of each tick's active time is consumed by tasks?" — a capacity-planning metric that remains meaningful regardless of the main-loop sleep strategy and will stay correct when the kernel internalises the run loop.
 
 `PerformanceFormatter::formatKeyValue()` and `formatCSV()` convert a snapshot to text in a caller-supplied `char` buffer using integer arithmetic (zero heap, no `printf`).
 
@@ -386,6 +396,15 @@ builder.setStream(&stream)
        .setWatchdogKick(kickFn)
        .setClockSource(clockFn);
 
+// Wire telemetry drain (BackgroundDiagnosticsTask drains each tick)
+builder.setTelemetryDrain(writeFn, ctx);
+
+// Multi-core: guard shared TelemetryLogger
+builder.setTelemetryMutex(&mutex);
+
+// Register stop conditions (OR'd — any one triggers run() exit)
+builder.addStopCondition([]() -> bool { return /* condition */; });
+
 // Scheduled tasks on a specific core
 builder.core(0).addScheduledTask(&myTask);
 
@@ -394,6 +413,9 @@ builder.addBackgroundTask(&myBgTask);
 
 // Validate + populate System<Cfg>
 BuildResult result = builder.build();
+
+// Run the kernel (blocks until stop condition fires)
+System<Cfg>::run(0);
 ```
 
 ### 10.1 Build-time Validation
@@ -428,6 +450,7 @@ New optional config fields added to the `Cfg` struct contract, with SFINAE extra
 | `kMinSchedulePeriodUs` | 10 µs | Floor for `IScheduledTask::periodUs()` — enforced at build time |
 | `kStrictWCET` | `false` | If true, `forceSafeAbort()` on WCET violation (future use) |
 | `kIsrContextBudgetUs[kCoreCount]` | `{0, 0, ...}` | Per-core ISR overhead budget for utilization accounting (future use) |
+| `kMetricsWindowUs` | 60 000 000 (60 s) | Time-based rolling window duration for `TaskTimer`, `SchedulerHealthMetrics`, and `QueueDepthMonitor`. 0 disables windowing. |
 
 ---
 
@@ -445,6 +468,8 @@ New optional config fields added to the `Cfg` struct contract, with SFINAE extra
 | `CfgMinSchedulePeriodUs` | `test_ConfigTraits.cpp` | Default and override values |
 | `CfgStrictWCET` | `test_ConfigTraits.cpp` | Default and override |
 | `CfgIsrContextBudgetUs` | `test_ConfigTraits.cpp` | Default and override |
+| `CfgMetricsWindowUs` | `test_ConfigTraits.cpp` | Default and override |
+| `SystemRun` | `test_SystemRun.cpp` | `run()` exit on stop condition, OR'd conditions, init delegation, telemetry drain wiring, logger accessor, stop condition overflow |
 
 ### System Tests
 

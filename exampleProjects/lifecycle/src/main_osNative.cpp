@@ -3,7 +3,22 @@
  * @brief OS-native entry point for the Lifecycle kernel state example.
  *
  * Demonstrates dual-core AMP scheduling with kernel state observation
- * and background gap utilisation:
+ * using the `System<Cfg>::run()` blocking API:
+ *
+ * @code
+ *   SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
+ *   builder.setStream(&stream);
+ *   builder.setTelemetryDrain(stdoutWrite, nullptr);
+ *   builder.setTelemetryMutex(&mutex);
+ *   builder.addStopCondition(stopFn);
+ *   builder.core(0).addScheduledTask(&workerTask);
+ *   builder.core(1).addScheduledTask(&monitorTask);
+ *   builder.build();
+ *
+ *   std::thread core1([]() { System<Cfg>::run(1); });
+ *   System<Cfg>::run(0);
+ *   core1.join();
+ * @endcode
  *
  * - **Kernel state tracking**: `MonitorTask` on Core 1 reads
  *   `System<Cfg>::kernelState()` each tick, logging the kernel's
@@ -13,9 +28,8 @@
  *   `MonitorTask` (2 Hz) on Core 1 run independently via separate
  *   Cruncher instances.  Neither core's scheduling affects the other.
  *
- * - **Multi-core startup/shutdown barriers**: Uses `MultiCoreSync<2>`
- *   to synchronise init and teardown, exactly as a real dual-core MCU
- *   would require.
+ * - **Multi-core startup/shutdown barriers**: Managed internally by
+ *   `System<Cfg>::run()` — the caller never touches `MultiCoreSync`.
  *
  * - **Lifecycle callbacks**: `WorkerTask` implements `onSuspend()` and
  *   `onResume()` to demonstrate task lifecycle hooks (logged but not
@@ -45,11 +59,11 @@
 #include "TcpStreamServer.h"
 #include "WorkerTask.h"
 
+#include "TimedMutexAdapter.h"
 #include "sputteros/builder/SystemBuilder.h"
 #include "sputteros/kernel/System.h"
 #include "sputteros/kernel/interfaces/ISafetyMonitor.h"
 #include "sputteros/osal/SputterTime.h"
-#include "sputteros/utils/logging/TelemetryLogger.h"
 
 #include <array>
 #include <chrono>
@@ -64,7 +78,6 @@ int main(int argc, char *argv[])
 {
     using Cfg = Lifecycle::LifecycleConfig;
     using namespace SputterOS;
-    using ms = std::chrono::milliseconds;
 
     // Parse flags: --forever, --tcp-port <N>
     bool     forever = false;
@@ -86,13 +99,12 @@ int main(int argc, char *argv[])
     // -- User application (permanently IDLE) --------------------------------
     Lifecycle::LifecycleApplication app;
 
-    // -- Per-core telemetry loggers -----------------------------------------
-    TelemetryLogger workerTelemetry;  // drained by Core 0
-    TelemetryLogger monitorTelemetry; // drained by Core 1
+    // -- Mutex for kernel-owned TelemetryLogger (shared across cores) -------
+    Lifecycle::TimedMutexAdapter telemetryMutex;
 
-    // -- User tasks ---------------------------------------------------------
-    Lifecycle::WorkerTask  workerTask(workerTelemetry);   // Core 0, 5 Hz
-    Lifecycle::MonitorTask monitorTask(monitorTelemetry); // Core 1, 2 Hz
+    // -- User tasks (write to kernel-owned TelemetryLogger) -----------------
+    Lifecycle::WorkerTask  workerTask(System<Cfg>::telemetryLogger());  // Core 0, 5 Hz
+    Lifecycle::MonitorTask monitorTask(System<Cfg>::telemetryLogger()); // Core 1, 2 Hz
 
     // -- Select active stream (TCP or stdout) -------------------------------
     SputterOS::IStream *activeStream = (tcpPort > 0) ? static_cast<SputterOS::IStream *>(&tcpStream)
@@ -105,6 +117,22 @@ int main(int argc, char *argv[])
     builder.setStream(activeStream);
     builder.setClockSource(Lifecycle::platformGetTimeMicros);
     builder.setWatchdogKick(nullptr);
+    builder.setTelemetryDrain(stdoutWrite, nullptr);
+    builder.setTelemetryMutex(&telemetryMutex);
+
+    // Stop condition: wallclock timeout OR g_running cleared externally.
+    if (!forever)
+    {
+        static constexpr uint32_t kRunMs = 3000;
+        builder.addStopCondition(
+            []() -> bool
+            {
+                using Clock             = std::chrono::steady_clock;
+                static const auto endAt = Clock::now() + std::chrono::milliseconds{kRunMs};
+                return Clock::now() >= endAt;
+            });
+    }
+    builder.addStopCondition([]() -> bool { return !Lifecycle::g_running.load(std::memory_order_acquire); });
 
     // Register user tasks on appropriate cores.
     // Kernel auto-places ScheduledControlTask → Core 0, ScheduledCommsTask → Core 1.
@@ -121,66 +149,9 @@ int main(int argc, char *argv[])
     std::printf("--- Lifecycle Example: Dual-Core AMP Scheduling ---\n");
     std::printf("Kernel state after build(): %u\n", static_cast<unsigned>(System<Cfg>::kernelState()));
 
-    // -- Retrieve sync handle before launching Core 1 -----------------------
-    auto &sync = System<Cfg>::multiCoreSync();
-
-    // -- Launch Core 1 thread -----------------------------------------------
-    std::thread core1Thread(
-        [&sync, &monitorTelemetry]()
-        {
-            sync.setInit(1);
-            System<Cfg>::init(1);
-
-            if (!sync.startupBarrier(1, ms{2000}))
-            {
-                return;
-            }
-
-            while (Lifecycle::g_running.load(std::memory_order_acquire))
-            {
-                const SputterMicros now = Lifecycle::platformGetTimeMicros();
-                System<Cfg>::watchdog().kick(1, now);
-                System<Cfg>::tick(1, now);
-                monitorTelemetry.drain(stdoutWrite);
-                std::this_thread::sleep_for(ms{1});
-            }
-
-            sync.shutdownBarrier(1, ms{2000});
-        });
-
-    // -- Core 0 (main thread) -----------------------------------------------
-    sync.setInit(0);
-    System<Cfg>::init(0);
-
-    std::printf("Kernel state after init():  %u\n", static_cast<unsigned>(System<Cfg>::kernelState()));
-
-    if (!sync.startupBarrier(0, ms{2000}))
-    {
-        std::fprintf(stderr, "Startup barrier timed out\n");
-        core1Thread.join();
-        return 1;
-    }
-
-    std::printf("Both cores running. Main loop for ~3 seconds...\n\n");
-
-    // Run for ~3 seconds, or indefinitely when launched with --forever.
-    static constexpr uint32_t kRunMs = 3000;
-    using WallClock                  = std::chrono::steady_clock;
-    const auto endAt                 = WallClock::now() + ms{kRunMs};
-
-    while (forever || WallClock::now() < endAt)
-    {
-        const SputterMicros now = Lifecycle::platformGetTimeMicros();
-        System<Cfg>::watchdog().kick(0, now);
-        System<Cfg>::tick(0, now);
-        workerTelemetry.drain(stdoutWrite);
-        std::this_thread::sleep_for(ms{1});
-    }
-
-    // Signal shutdown to Core 1.
-    Lifecycle::g_running.store(false, std::memory_order_release);
-
-    sync.shutdownBarrier(0, ms{2000});
+    // -- Launch Core 1 and run Core 0 (both block until stop condition) -----
+    std::thread core1Thread([]() { System<Cfg>::run(1); });
+    System<Cfg>::run(0);
     core1Thread.join();
 
     // -- Final summary ------------------------------------------------------

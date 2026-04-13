@@ -405,6 +405,30 @@ template <typename Cfg> struct CfgIsrContextBudgetUs<Cfg, std::void_t<decltype(C
     static constexpr auto &value = Cfg::kIsrContextBudgetUs;
 };
 
+/**
+ * @brief Extracts `Cfg::kMetricsWindowUs` or defaults to 60000000 µs (60 s).
+ *
+ * Duration of the rolling metrics window for `TaskTimer`,
+ * `SchedulerHealthMetrics`, and `QueueDepthMonitor`. When the elapsed
+ * time since the window start exceeds this value, accumulators are
+ * snapshotted and reset. Accessors report the last complete window.
+ *
+ * **Trade-offs:**
+ * - Shorter windows (e.g. 1 s): more responsive to recent behaviour,
+ *   but averages are noisier and peaks only cover a short period.
+ * - Longer windows (e.g. 60 s): smoother averages, wider peak capture,
+ *   but slower to reflect recent changes.
+ */
+template <typename Cfg, typename = void> struct CfgMetricsWindowUs
+{
+    static constexpr SputterMicros value = 60'000'000; // 60 seconds
+};
+
+template <typename Cfg> struct CfgMetricsWindowUs<Cfg, std::void_t<decltype(Cfg::kMetricsWindowUs)>>
+{
+    static constexpr SputterMicros value = Cfg::kMetricsWindowUs;
+};
+
 } // namespace SputterOS
 
 #endif // SPUTTEROS_CONFIG_TRAITS_H

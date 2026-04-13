@@ -8,6 +8,7 @@
 #include "sputteros/utils/MemoryProfiler.h"
 #include "sputteros/utils/QueueDepthMonitor.h"
 #include "sputteros/utils/logging/ErrorLogger.h"
+#include "sputteros/utils/logging/TelemetryLogger.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -103,6 +104,19 @@ class BackgroundDiagnosticsTask : public IBackgroundTask
     void setSchedulerHealth(SchedulerHealthMetrics *metrics) { m_schedulerHealth = metrics; }
 
     /**
+     * @brief Wire telemetry drain so this task flushes the logger each tick.
+     *
+     * When set, every `tick()` will call `logger->drain(writeFn, ctx)` after
+     * all other diagnostics work. This moves telemetry draining out of user
+     * code and into the kernel.
+     *
+     * @param logger:  Pointer to the kernel-owned TelemetryLogger.
+     * @param writeFn: Callback invoked for each formatted log line.
+     * @param ctx:     Opaque context forwarded to every `writeFn` call.
+     */
+    void setTelemetryDrain(TelemetryLogger *logger, TelemetryLogger::DrainWriteFn writeFn, void *ctx);
+
+    /**
      * @brief PassKey constructor — only SystemBuilder and KernelTestAccess may instantiate.
      *
      * @param tag: Opaque access token (see KernelConstructTag.h).
@@ -152,6 +166,15 @@ class BackgroundDiagnosticsTask : public IBackgroundTask
     uint32_t                  m_tickCount;                /**< @brief Incremented each tick for sub-rate scheduling. */
     QueueDepthMonitor        *m_queueMonitor{nullptr};    /**< @brief Optional queue depth sampler. */
     SchedulerHealthMetrics   *m_schedulerHealth{nullptr}; /**< @brief Optional scheduler health aggregator. */
+
+    /**
+     * --------------------
+     * Telemetry Drain
+     * --------------------
+     */
+    TelemetryLogger              *m_telemetryLogger{nullptr}; /**< @brief Kernel-owned telemetry logger to drain. */
+    TelemetryLogger::DrainWriteFn m_drainFn{nullptr};         /**< @brief Output callback for telemetry drain. */
+    void                         *m_drainCtx{nullptr};        /**< @brief Opaque context for drain callback. */
 };
 
 } // namespace Kernel

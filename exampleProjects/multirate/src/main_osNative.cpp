@@ -44,13 +44,11 @@
 #include "sputteros/kernel/System.h"
 #include "sputteros/kernel/interfaces/ISafetyMonitor.h"
 #include "sputteros/osal/SputterTime.h"
-#include "sputteros/utils/logging/TelemetryLogger.h"
 
 #include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <thread>
 
 /// @brief Drain callback — writes telemetry text to stdout.
 static void stdoutWrite(const uint8_t *data, std::size_t len, void * /*ctx*/) { std::fwrite(data, 1, len, stdout); }
@@ -80,13 +78,10 @@ int main(int argc, char *argv[])
     // -- User application (permanently IDLE) --------------------------------
     Multirate::MultirateApplication app;
 
-    // -- Diagnostics infrastructure -----------------------------------------
-    TelemetryLogger telemetry;
-
-    // -- User tasks ---------------------------------------------------------
+    // -- User tasks (write to kernel-owned TelemetryLogger) -----------------
     Multirate::FastSampleTask  fastTask;
-    Multirate::SlowReportTask  slowTask(telemetry, fastTask);
-    Multirate::IdleCounterTask idleTask(telemetry);
+    Multirate::SlowReportTask  slowTask(System<Cfg>::telemetryLogger(), fastTask);
+    Multirate::IdleCounterTask idleTask(System<Cfg>::telemetryLogger());
 
     // -- Select active stream (TCP or stdout) -------------------------------
     SputterOS::IStream *activeStream = (tcpPort > 0) ? static_cast<SputterOS::IStream *>(&tcpStream)
@@ -94,15 +89,29 @@ int main(int argc, char *argv[])
     if (tcpPort > 0 && !tcpStream.startAccept())
         return 1;
 
+    // -- Stop condition: run for 5 slow reports unless --forever -------------
+    static constexpr uint32_t kNumReports = 5;
+    static constexpr uint32_t kDrainMs    = 200;
+
+    using WallClock = std::chrono::steady_clock;
+    static auto s_endAt =
+        WallClock::now() +
+        std::chrono::milliseconds{kNumReports * (Multirate::SlowReportTask::kPeriodUs / 1000) + kDrainMs};
+
     // -- Build the kernel ---------------------------------------------------
     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
     builder.setStream(activeStream);
     builder.setClockSource(Multirate::platformGetTimeMicros);
     builder.setWatchdogKick(nullptr);
+    builder.setTelemetryDrain(stdoutWrite, nullptr);
+
+    // Register stop condition (skipped when --forever)
+    if (!forever)
+    {
+        builder.addStopCondition([]() -> bool { return WallClock::now() >= s_endAt; });
+    }
 
     // Register scheduled tasks on Core 0.
-    // The Cruncher auto-assigns RMS priority: FastSampleTask (10 ms period)
-    // gets higher priority than SlowReportTask (500 ms period).
     builder.core(0).addScheduledTask(&fastTask);
     builder.core(0).addScheduledTask(&slowTask);
 
@@ -116,31 +125,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // -- Initialise all tasks -----------------------------------------------
-    System<Cfg>::init(0);
-
-    // -- Main loop ----------------------------------------------------------
-    // Run for 5 slow reports (5 × 500 ms) plus a drain buffer,
-    // or indefinitely when launched with --forever.
-    static constexpr uint32_t kNumReports = 5;
-    static constexpr uint32_t kDrainMs    = 200;
-
-    using WallClock  = std::chrono::steady_clock;
-    const auto endAt = WallClock::now() + std::chrono::milliseconds{
-                                              kNumReports * (Multirate::SlowReportTask::kPeriodUs / 1000) + kDrainMs};
-
-    while (forever || WallClock::now() < endAt)
-    {
-        const SputterMicros now = Multirate::platformGetTimeMicros();
-
-        // Tick all Core 0 tasks via the Cruncher + SystemScheduler.
-        System<Cfg>::tick(0, now);
-
-        // Drain buffered telemetry to stdout.
-        telemetry.drain(stdoutWrite);
-
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
-    }
+    // -- Run the kernel (blocks until stop condition fires) -----------------
+    System<Cfg>::run(0);
 
     // -- Final summary ------------------------------------------------------
     std::printf("\n--- MultiRate Summary ---\n");
