@@ -304,8 +304,9 @@ TEST(SystemBuilderDep, Build_PopulatesTaskCountOnCore0)
     BuildResult result = builder.build();
     ASSERT_TRUE(result.ok) << result.error;
 
-    // 3 kernel tasks + 1 user task on core 0 (single-core config).
-    EXPECT_EQ(System<Cfg>::taskCount(0), 4u);
+    // 2 kernel scheduled tasks (ControlTask + CommsTask) + 1 user task on core 0.
+    // DiagnosticsTask is now dispatched via the background ring, not the core list.
+    EXPECT_EQ(System<Cfg>::taskCount(0), 3u);
 }
 
 static uint64_t g_clockValue = 42000;

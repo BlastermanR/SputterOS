@@ -411,8 +411,8 @@ template <typename Cfg> class SystemBuilder
      * and pinned automatically:
      * - `ScheduledControlTask` (IScheduledTask) → Core 0
      * - `ScheduledCommsTask` (IScheduledTask) → Core 1 (or Core 0 if single-core)
-     * - `BackgroundDiagnosticsTask` (IBackgroundTask) → background ring
-     *   (also temporarily on a core for Phase 1 dispatch compatibility)
+     * - `BackgroundDiagnosticsTask` (IBackgroundTask) → background ring only
+     *   (dispatched via gap-time budget in `tick()` on the designated background core)
      *
      * Performs validation:
      * 1. At least one core has tasks (or kernel tasks are being created).
@@ -442,26 +442,39 @@ template <typename Cfg> class SystemBuilder
 
             // Auto-register kernel scheduled tasks on correct cores.
             // Prepend in reverse order so the final tick order is:
-            //   [ScheduledControlTask, ScheduledCommsTask, BackgroundDiagnosticsTask, ...user tasks...]
+            //   [ScheduledControlTask, ScheduledCommsTask, ...user tasks...]
+            // BackgroundDiagnosticsTask is dispatched via background ring only.
             if constexpr (kMultiCore)
             {
                 m_cores[0].prependTask(&*S::s_controlTask);
-                // TODO: Phase 3 — remove DiagnosticsTask from core task list when SystemScheduler dispatches background
-                // tasks
-                m_cores[1].prependTask(&*S::s_diagsTask);
                 m_cores[1].prependTask(&*S::s_commsTask);
             }
             else
             {
-                // TODO: Phase 3 — remove DiagnosticsTask from core task list when SystemScheduler dispatches background
-                // tasks
-                m_cores[0].prependTask(&*S::s_diagsTask);
                 m_cores[0].prependTask(&*S::s_commsTask);
                 m_cores[0].prependTask(&*S::s_controlTask);
             }
 
             // Register BackgroundDiagnosticsTask in the background task ring.
             S::s_backgroundTasks[S::s_backgroundTaskCount++] = &*S::s_diagsTask;
+
+            // Set background dispatch core (last active core, or Core 0 for single-core).
+            if constexpr (kMultiCore)
+            {
+                S::s_backgroundCoreId = 0;
+                for (std::size_t c = kCoreCount; c > 0; --c)
+                {
+                    if (S::s_cores[c - 1].isActive())
+                    {
+                        S::s_backgroundCoreId = c - 1;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                S::s_backgroundCoreId = 0;
+            }
 
             // Wire telemetry drain if a callback was registered.
             if (S::s_drainFn)
@@ -536,6 +549,14 @@ template <typename Cfg> class SystemBuilder
                     }
                 }
             }
+            // Propagate clock source to background tasks
+            for (std::size_t b = 0; b < S::s_backgroundTaskCount; ++b)
+            {
+                if (S::s_backgroundTasks[b])
+                {
+                    S::s_backgroundTasks[b]->timer().setClockSource(m_clockSource);
+                }
+            }
         }
 
         // --- Propagate metrics window duration to all windowed trackers ---
@@ -550,6 +571,14 @@ template <typename Cfg> class SystemBuilder
                     {
                         tsk->timer().setMetricsWindowUs(windowUs);
                     }
+                }
+            }
+            // Propagate metrics window to background tasks
+            for (std::size_t b = 0; b < S::s_backgroundTaskCount; ++b)
+            {
+                if (S::s_backgroundTasks[b])
+                {
+                    S::s_backgroundTasks[b]->timer().setMetricsWindowUs(windowUs);
                 }
             }
             S::s_schedulerHealth.setMetricsWindowUs(windowUs);

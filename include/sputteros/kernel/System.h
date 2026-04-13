@@ -230,6 +230,18 @@ template <typename Cfg> class System
             }
         }
 
+        // Initialize background tasks on the designated background core
+        if (coreId == s_backgroundCoreId)
+        {
+            for (std::size_t b = 0; b < s_backgroundTaskCount; ++b)
+            {
+                if (s_backgroundTasks[b])
+                {
+                    s_backgroundTasks[b]->init();
+                }
+            }
+        }
+
         // Transition to RUNNING after tasks initialized
         if (s_kernelState == Kernel::KernelState::INITIALIZING)
             transitionTo(Kernel::KernelState::RUNNING);
@@ -266,6 +278,7 @@ template <typename Cfg> class System
 
         s_utilTracker[coreId].recordTickStart(systemTimeMicros);
 
+        // Phase 1: Scheduled tasks
         SputterMicros busyAccum = 0;
         for (std::size_t t = 0; t < s_cores[coreId].taskCount; ++t)
         {
@@ -277,6 +290,40 @@ template <typename Cfg> class System
                 tsk->timer().stop();
                 busyAccum += tsk->timer().lastDuration();
             }
+        }
+
+        // Phase 2: Background tasks — round-robin, budget-gated after first dispatch.
+        // At least one background task always dispatches per tick (the round-robin
+        // head) to ensure DiagnosticsTask can always monitor for budget violations.
+        // Additional tasks are budget-capped by the remaining gap time.
+        if (coreId == s_backgroundCoreId && s_backgroundTaskCount > 0)
+        {
+            SputterMicros gapBudget = CfgControlBudgetUs<Cfg>::value;
+            SputterMicros used      = busyAccum;
+
+            for (std::size_t i = 0; i < s_backgroundTaskCount; ++i)
+            {
+                IBackgroundTask *bg = s_backgroundTasks[s_bgRoundRobin];
+                s_bgRoundRobin      = (s_bgRoundRobin + 1) % s_backgroundTaskCount;
+
+                if (bg)
+                {
+                    // After the first dispatch, enforce budget cap
+                    if (i > 0)
+                    {
+                        SputterMicros taskBudget = bg->maxBudgetUs();
+                        if (used + taskBudget > gapBudget)
+                            break;
+                    }
+
+                    bg->timer().start();
+                    bg->tick(systemTimeMicros);
+                    bg->timer().stop();
+                    used += bg->timer().lastDuration();
+                }
+            }
+
+            busyAccum = used;
         }
 
         SputterMicros tickEndTime = s_timer.nowMicros();
@@ -588,6 +635,8 @@ template <typename Cfg> class System
         s_commandQueue.clear();
         s_allTaskCount        = 0;
         s_backgroundTaskCount = 0;
+        s_bgRoundRobin        = 0;
+        s_backgroundCoreId    = 0;
         for (auto &t : s_backgroundTasks)
             t = nullptr;
         for (std::size_t c = 0; c < kCoreCount; ++c)
@@ -682,6 +731,8 @@ template <typename Cfg> class System
 
     inline static IBackgroundTask *s_backgroundTasks[CfgMaxBackgroundTasks<Cfg>::value] = {};
     inline static std::size_t      s_backgroundTaskCount{0};
+    inline static std::size_t      s_bgRoundRobin{0};
+    inline static std::size_t      s_backgroundCoreId{0};
 
     // =====================================================================
     // Per-Core Task Lists
