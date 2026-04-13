@@ -310,6 +310,8 @@ classDiagram
         +histogram() uint32[8]
         +percentileUs(p) microseconds
         +isOverBudget(budget) bool
+        +setMetricsWindowUs(windowUs)
+        +metricsWindowUs() microseconds
         +reset()
     }
 
@@ -399,10 +401,10 @@ The utility layer is organized into two subfolders:
 | `MemoryProfiler` | Heap/stack high-water mark tracking. Platform stubs return 0 — subclass for real hardware. |
 | `LightweightStringBuilder` | 128-byte fixed-capacity heap-free formatter. Chainable `append()`. |
 | `NonBlockingStopwatch` | Monotonic timer: `hasExpired(time, duration) → bool`. |
-| `TaskTimer` | Per-task execution timer with injectable clock. Tracks last/min/max/average duration, sample count, overrun count, deadline-miss count, and an 8-bucket duration histogram (512 µs per bucket). Embedded in every `ITask`. |
+| `TaskTimer` | Per-task execution timer with injectable clock. Tracks last/min/max/average duration, sample count, overrun count, deadline-miss count, and an 8-bucket duration histogram (512 µs per bucket). A **time-based rolling window** (default 60 s, configurable via `kMetricsWindowUs`) prevents counter overflow in high-frequency schedulers — accumulators are snapshotted and reset each window. Embedded in every `ITask`. |
 | `CoreUtilizationTracker` | Per-core windowed busy/total accumulator. Wall time is the dispatch window (tick start → tick end), excluding sleep between ticks. Auto-resets every 1000 ticks; exposes `getUtilization()` for the last complete window. |
-| `SchedulerHealthMetrics` | Aggregate gap-time (idle time per tick), peak gap, total overruns, and total deadline misses across all tasks. Counters saturate at `UINT32_MAX` to prevent wrap-around. |
-| `QueueDepthMonitor` | Command queue depth tracker: last/max/average depth. Sample count saturates at `UINT32_MAX`. |
+| `SchedulerHealthMetrics` | Aggregate gap-time (idle time per tick), peak gap, total overruns, and total deadline misses across all tasks. Uses the same **time-based rolling window** as `TaskTimer` to prevent counter overflow. |
+| `QueueDepthMonitor` | Command queue depth tracker: last/max/average depth. Uses the same **time-based rolling window** as `TaskTimer` to prevent counter overflow. |
 | `PerformanceSnapshot` | POD value type (~1.2 KiB on stack). Captures a point-in-time copy of all metrics: per-core utilization, per-task histograms, queue depth, memory, and scheduler health. Returned by `System<Cfg>::snapshot()`. |
 | `PerformanceFormatter` | Heap-free formatter consuming a `PerformanceSnapshot`. Writes key=value or CSV text into a caller-provided `char` buffer. Uses integer arithmetic for float formatting. |
 
@@ -422,6 +424,7 @@ SputterOS uses **compile-time template parameters**. Define a plain struct satis
 | `kMaxCommandsPerTick` | `static constexpr int` | Optional | 8 |
 | `kMaxValidCommandID` | `static constexpr uint8_t` | Optional | 255 |
 | `kControlBudgetUs` | `static constexpr uint32_t` | Optional | 10000 (10 ms / 100 Hz) |
+| `kMetricsWindowUs` | `static constexpr uint64_t` | Optional | 60 000 000 (60 s) |
 
 `ConfigValidator<Cfg>` enforces `static_assert` checks at template instantiation.
 

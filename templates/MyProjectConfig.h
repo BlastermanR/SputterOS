@@ -208,6 +208,23 @@ struct MyProjectConfig
     // static constexpr uint64_t kMinSchedulePeriodUs = 10;
 
     /**
+     * @brief Rolling metrics window duration in microseconds.
+     *
+     * Controls how long TaskTimer, SchedulerHealthMetrics, and
+     * QueueDepthMonitor accumulate data before rotating to a fresh
+     * window. Accessors report the last complete window. Prevents
+     * counter overflow in high-frequency (sub-10 µs) schedulers.
+     *
+     * Trade-offs:
+     * - Shorter (e.g. 1 s): responsive to recent behaviour, noisier averages.
+     * - Longer (e.g. 60 s): smoother averages, wider peak capture.
+     * - 0: disables windowing — counters grow unbounded (not recommended).
+     *
+     * Default: 60000000 (60 seconds)
+     */
+    // static constexpr uint64_t kMetricsWindowUs = 60'000'000;
+
+    /**
      * @brief Enable strict worst-case execution time monitoring.
      *
      * When true, the scheduler flags task overruns as errors. Useful during

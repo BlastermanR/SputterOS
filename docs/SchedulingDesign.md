@@ -345,14 +345,17 @@ Every `ITask` embeds a `Kernel::TaskTimer`. `System::tick()` calls `timer().star
 | Minimum tick duration | `minDuration()` | µs; initialized to `UINT64_MAX` |
 | Maximum tick duration | `maxDuration()` | µs |
 | Rolling average duration | `getAverageDurationUs()` | Returns 0 if no samples |
-| Sample count | `sampleCount()` | `uint32_t`; wraps after ~4.3 B ticks |
+| Sample count | `sampleCount()` | `uint32_t` |
 | Over-budget flag | `isOverBudget(budgetUs)` | Compares `lastDuration()` to budget |
 | Overrun count | `overrunCount()` | Incremented by `BackgroundDiagnosticsTask` |
 | Deadline-miss count | `deadlineMissCount()` | Incremented for period violations |
 | Duration histogram | `histogram()` | 8 buckets × 512 µs — see below |
 | Approximate percentile | `percentileUs(p)` | Linear interpolation within bucket |
+| Metrics window | `metricsWindowUs()` / `setMetricsWindowUs()` | Time-based rolling window duration (µs). Default 60 s. 0 disables. |
 
 `BackgroundDiagnosticsTask` reads these metrics to detect WCET violations. In tests, `task.timer().sampleCount() > 0` confirms that the task was dispatched at all.
+
+All windowed accessors (`minDuration`, `maxDuration`, `getAverageDurationUs`, `sampleCount`, `overrunCount`, `deadlineMissCount`, `histogram`) return the last **complete** window’s values once a rotation has occurred. Before the first rotation they fall through to the in-progress accumulators. The window duration is propagated by `SystemBuilder` from `CfgMetricsWindowUs<Cfg>::value` (default 60 s).
 
 ### 9.1 Histogram Distribution
 
@@ -376,6 +379,8 @@ The bucket width of **512 µs** (2⁹) ensures the index computation `elapsed >>
 ### 9.2 Performance Snapshot
 
 `System<Cfg>::snapshot()` aggregates all per-task timers together with per-core utilization (`CoreUtilizationTracker`), scheduler health (`SchedulerHealthMetrics`), queue depth (`QueueDepthMonitor`), and memory profiling into a `PerformanceSnapshot` POD value. The struct is ~1.2 KiB on the stack for a 16-task, 4-core configuration — call `snapshot()` from a background or top-level context rather than from inside a time-critical tick.
+
+`SchedulerHealthMetrics` and `QueueDepthMonitor` use the same **time-based rolling window** as `TaskTimer`. `System::tick()` passes the current timestamp to `recordGap(gapUs, nowUs)` and `sample(depth, nowUs)` so that window rotation is driven by wall-clock time. Accessors on both classes return the last complete window once a rotation has occurred.
 
 `CoreUtilizationTracker` reports **dispatch-window utilization**: wall time is the interval from `recordTickStart()` to `recordTickEnd()` within the same tick, so it excludes sleep or idle gaps between ticks. This answers "how much of each tick's active time is consumed by tasks?" — a capacity-planning metric that remains meaningful regardless of the main-loop sleep strategy and will stay correct when the kernel internalises the run loop.
 
@@ -445,6 +450,7 @@ New optional config fields added to the `Cfg` struct contract, with SFINAE extra
 | `kMinSchedulePeriodUs` | 10 µs | Floor for `IScheduledTask::periodUs()` — enforced at build time |
 | `kStrictWCET` | `false` | If true, `forceSafeAbort()` on WCET violation (future use) |
 | `kIsrContextBudgetUs[kCoreCount]` | `{0, 0, ...}` | Per-core ISR overhead budget for utilization accounting (future use) |
+| `kMetricsWindowUs` | 60 000 000 (60 s) | Time-based rolling window duration for `TaskTimer`, `SchedulerHealthMetrics`, and `QueueDepthMonitor`. 0 disables windowing. |
 
 ---
 
@@ -462,6 +468,7 @@ New optional config fields added to the `Cfg` struct contract, with SFINAE extra
 | `CfgMinSchedulePeriodUs` | `test_ConfigTraits.cpp` | Default and override values |
 | `CfgStrictWCET` | `test_ConfigTraits.cpp` | Default and override |
 | `CfgIsrContextBudgetUs` | `test_ConfigTraits.cpp` | Default and override |
+| `CfgMetricsWindowUs` | `test_ConfigTraits.cpp` | Default and override |
 | `SystemRun` | `test_SystemRun.cpp` | `run()` exit on stop condition, OR'd conditions, init delegation, telemetry drain wiring, logger accessor, stop condition overflow |
 
 ### System Tests

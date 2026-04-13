@@ -73,6 +73,7 @@ struct FullSchedulingCfg
     static constexpr SputterMicros kMinSchedulePeriodUs   = 100;
     static constexpr bool          kStrictWCET            = true;
     static constexpr SputterMicros kIsrContextBudgetUs[2] = {200, 300};
+    static constexpr uint64_t      kMetricsWindowUs       = 30'000'000;
 };
 
 /// Stub scheduled task for type trait tests.
@@ -147,6 +148,13 @@ TEST(CfgIsrContextBudgetUs, Override_ReturnsPerCoreValues)
 {
     EXPECT_EQ(CfgIsrContextBudgetUs<FullSchedulingCfg>::value[0], 200u);
     EXPECT_EQ(CfgIsrContextBudgetUs<FullSchedulingCfg>::value[1], 300u);
+}
+
+TEST(CfgMetricsWindowUs, Default_Returns60s) { EXPECT_EQ(CfgMetricsWindowUs<MinimalCfg>::value, 60'000'000u); }
+
+TEST(CfgMetricsWindowUs, Override_ReturnsCustomValue)
+{
+    EXPECT_EQ(CfgMetricsWindowUs<FullSchedulingCfg>::value, 30'000'000u);
 }
 
 // ===========================================================================

@@ -21,7 +21,11 @@ using namespace SputterOS::Kernel;
 class SchedulerHealthMetricsTest : public ::testing::Test
 {
   protected:
-    void SetUp() override { m_metrics.reset(); }
+    void SetUp() override
+    {
+        m_metrics.reset();
+        m_metrics.setMetricsWindowUs(0); // Disable windowing for basic tests
+    }
 
     SchedulerHealthMetrics m_metrics;
 };
@@ -105,5 +109,89 @@ TEST_F(SchedulerHealthMetricsTest, Reset_ClearsAll)
     EXPECT_FLOAT_EQ(m_metrics.averageGapUs(), 0.0f);
     EXPECT_EQ(m_metrics.totalOverruns(), 0u);
     EXPECT_EQ(m_metrics.totalDeadlineMisses(), 0u);
+    EXPECT_EQ(m_metrics.tickCount(), 0u);
+}
+
+// ===========================================================================
+// Rolling window — time-based
+// ===========================================================================
+
+class SchedulerHealthWindowTest : public ::testing::Test
+{
+  protected:
+    void SetUp() override
+    {
+        m_metrics.reset();
+        m_metrics.setMetricsWindowUs(1'000'000); // 1 s window
+    }
+
+    SchedulerHealthMetrics m_metrics;
+};
+
+TEST_F(SchedulerHealthWindowTest, BeforeRotation_ReturnsInProgress)
+{
+    m_metrics.recordGap(500, 100);
+    m_metrics.recordGap(200, 200);
+
+    EXPECT_EQ(m_metrics.totalGapUs(), 700u);
+    EXPECT_EQ(m_metrics.maxGapUs(), 500u);
+    EXPECT_EQ(m_metrics.tickCount(), 2u);
+}
+
+TEST_F(SchedulerHealthWindowTest, Rotation_SnapshotsToReported)
+{
+    m_metrics.recordGap(500, 100);
+    m_metrics.recordGap(200, 200);
+
+    // Trigger rotation (10 µs gap included in old window)
+    m_metrics.recordGap(10, 1'100'000);
+
+    // Reported window: gaps 500 + 200 + 10 = 710, 3 ticks
+    EXPECT_EQ(m_metrics.totalGapUs(), 710u);
+    EXPECT_EQ(m_metrics.maxGapUs(), 500u);
+    EXPECT_EQ(m_metrics.tickCount(), 3u);
+    EXPECT_NEAR(m_metrics.averageGapUs(), 236.67f, 0.1f);
+}
+
+TEST_F(SchedulerHealthWindowTest, SecondRotation_OverwritesReported)
+{
+    m_metrics.recordGap(500, 100);
+
+    // Trigger first rotation (800 gap included in window 1)
+    m_metrics.recordGap(800, 1'100'000);
+    // Window 1 reported: total=1300, max=800, count=2
+
+    // Window 2 mid-window sample
+    m_metrics.recordGap(50, 1'200'000);
+
+    // Trigger second rotation (10 gap included in window 2)
+    m_metrics.recordGap(10, 2'200'000);
+
+    // Window 2 reported: 50 + 10 = 60, count=2
+    EXPECT_EQ(m_metrics.totalGapUs(), 60u);
+    EXPECT_EQ(m_metrics.maxGapUs(), 50u);
+    EXPECT_EQ(m_metrics.tickCount(), 2u);
+}
+
+TEST_F(SchedulerHealthWindowTest, DisabledWindow_NeverRotates)
+{
+    m_metrics.setMetricsWindowUs(0);
+
+    m_metrics.recordGap(500, 100);
+    m_metrics.recordGap(200, 100'000'000);
+
+    EXPECT_EQ(m_metrics.totalGapUs(), 700u);
+    EXPECT_EQ(m_metrics.tickCount(), 2u);
+}
+
+TEST_F(SchedulerHealthWindowTest, Reset_ClearsWindowState)
+{
+    m_metrics.recordGap(500, 100);
+    m_metrics.recordGap(10, 1'100'000); // trigger rotation
+
+    m_metrics.reset();
+
+    EXPECT_EQ(m_metrics.totalGapUs(), 0u);
+    EXPECT_EQ(m_metrics.maxGapUs(), 0u);
     EXPECT_EQ(m_metrics.tickCount(), 0u);
 }

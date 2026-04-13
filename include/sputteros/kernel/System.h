@@ -285,12 +285,12 @@ template <typename Cfg> class System
         // Record gap time (wall time - busy time) for scheduler health
         SputterMicros wallTime = (tickEndTime >= systemTimeMicros) ? (tickEndTime - systemTimeMicros) : 0;
         SputterMicros gapUs    = (wallTime >= busyAccum) ? (wallTime - busyAccum) : 0;
-        s_schedulerHealth.recordGap(gapUs);
+        s_schedulerHealth.recordGap(gapUs, tickEndTime);
 
         // Sample queue depth once per tick (on core 0 to avoid double-counting)
         if (coreId == 0)
         {
-            s_queueMonitor.sample(s_commandQueue.size());
+            s_queueMonitor.sample(s_commandQueue.size(), tickEndTime);
         }
     }
 

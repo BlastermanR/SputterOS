@@ -538,6 +538,24 @@ template <typename Cfg> class SystemBuilder
             }
         }
 
+        // --- Propagate metrics window duration to all windowed trackers ---
+        {
+            constexpr SputterMicros windowUs = CfgMetricsWindowUs<Cfg>::value;
+            for (std::size_t c = 0; c < kCoreCount; ++c)
+            {
+                for (std::size_t t = 0; t < S::s_cores[c].taskCount; ++t)
+                {
+                    ITask *tsk = S::s_cores[c].tasks[t];
+                    if (tsk)
+                    {
+                        tsk->timer().setMetricsWindowUs(windowUs);
+                    }
+                }
+            }
+            S::s_schedulerHealth.setMetricsWindowUs(windowUs);
+            S::s_queueMonitor.setMetricsWindowUs(windowUs);
+        }
+
         S::s_built = true;
         S::transitionTo(Kernel::KernelState::CONFIGURED);
         return {true, nullptr};
