@@ -57,6 +57,7 @@ help:
 	@echo ""
 	@echo "  Utilities:"
 	@echo "    make format           Format all source files (clang-format)"
+	@echo "    make memoryUsage TARGET=<path>  Report text/data/bss size of any executable"
 	@echo "    make clean            Remove build artifacts"
 	@echo "    make help             Show this help message"
 
@@ -109,12 +110,21 @@ formalTest:
 	@echo "===================================="
 	@bash tools/scripts/generate_formal_test_results.sh "$(CMAKE)" "$(NINJA)" "$(CTEST)"
 
-# Memory usage: Runs the memory usage script against the Pico build executable.
-# Run 'make pico_build' instead of 'make testBuild' for an ELF target.
+# Memory usage: Reports text/data/bss section sizes for any compiled executable.
+# Usage: make memoryUsage TARGET=<path/to/executable>
+TARGET ?=
 .PHONY: memoryUsage
 memoryUsage:
-	@echo "memoryUsage requires a Pico ELF target. Run 'make pico_build' first."
-	@echo "Example: python tools/scripts/pico_memory_usage.py <path/to/target.elf>"
+	@if [ -z "$(TARGET)" ]; then \
+		echo "Usage: make memoryUsage TARGET=<path/to/executable>"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(TARGET)" ]; then \
+		echo "Error: file not found: $(TARGET)"; \
+		exit 1; \
+	fi
+	@echo "Memory usage for: $(TARGET)"
+	@size "$(TARGET)"
 
 # ────────────────────────────────────────────────────────────────────────────
 # CODE COVERAGE (LLVM source-based via llvm-cov)
