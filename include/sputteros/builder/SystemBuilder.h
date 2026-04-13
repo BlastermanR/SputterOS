@@ -58,6 +58,7 @@
 #include "sputteros/kernel/interfaces/ISafetyMonitor.h"
 #include "sputteros/kernel/interfaces/IUserApplication.h"
 #include "sputteros/osal/tasks/IBackgroundTask.h"
+#include "sputteros/osal/tasks/ICrunchTask.h"
 #include "sputteros/osal/tasks/IScheduledTask.h"
 #include "sputteros/osal/tasks/ITask.h"
 
@@ -136,6 +137,31 @@ template <typename Cfg> class CoreBuilder
         if (m_core && task)
         {
             m_core->addTask(task);
+        }
+        return *this;
+    }
+
+    /**
+     * @brief Designate this core as a CRUNCH core with a single crunch task.
+     *
+     * Sets the core's dispatch mode to `CRUNCH` and registers the given
+     * `ICrunchTask` as the exclusive task. A CRUNCH core runs a tight
+     * blocking-tolerant loop managed by `CrunchDispatcher` instead of
+     * the normal flat-loop tick dispatch.
+     *
+     * @param task Non-null `ICrunchTask` pointer whose lifetime must
+     *        exceed the system runtime.
+     * @return Reference to this builder for chaining.
+     *
+     * @note Build-time validation enforces: no other tasks on this core,
+     *       Core 0 cannot be CRUNCH, and `kCoreCount >= 2`.
+     */
+    CoreBuilder &setCrunchTask(ICrunchTask *task)
+    {
+        if (m_core && task)
+        {
+            m_core->mode       = Kernel::CoreDispatchMode::CRUNCH;
+            m_core->crunchTask = task;
         }
         return *this;
     }
@@ -444,10 +470,18 @@ template <typename Cfg> class SystemBuilder
             // Prepend in reverse order so the final tick order is:
             //   [ScheduledControlTask, ScheduledCommsTask, ...user tasks...]
             // BackgroundDiagnosticsTask is dispatched via background ring only.
+            // If Core 1 is in CRUNCH mode, CommsTask falls back to Core 0.
             if constexpr (kMultiCore)
             {
                 m_cores[0].prependTask(&*S::s_controlTask);
-                m_cores[1].prependTask(&*S::s_commsTask);
+                if (S::s_cores[1].mode == Kernel::CoreDispatchMode::CRUNCH)
+                {
+                    m_cores[0].prependTask(&*S::s_commsTask);
+                }
+                else
+                {
+                    m_cores[1].prependTask(&*S::s_commsTask);
+                }
             }
             else
             {
@@ -507,6 +541,15 @@ template <typename Cfg> class SystemBuilder
             }
         }
 
+        // --- CRUNCH mode validation ---
+        {
+            BuildResult crunchResult = validateCrunchConstraints();
+            if (!crunchResult.ok)
+            {
+                return crunchResult;
+            }
+        }
+
         // --- Task dependency validation ---
         {
             BuildResult depResult = validateTaskDependencies();
@@ -557,6 +600,14 @@ template <typename Cfg> class SystemBuilder
                     S::s_backgroundTasks[b]->timer().setClockSource(m_clockSource);
                 }
             }
+            // Propagate clock source to crunch tasks
+            for (std::size_t c = 0; c < kCoreCount; ++c)
+            {
+                if (S::s_cores[c].crunchTask)
+                {
+                    S::s_cores[c].crunchTask->timer().setClockSource(m_clockSource);
+                }
+            }
         }
 
         // --- Propagate metrics window duration to all windowed trackers ---
@@ -579,6 +630,14 @@ template <typename Cfg> class SystemBuilder
                 if (S::s_backgroundTasks[b])
                 {
                     S::s_backgroundTasks[b]->timer().setMetricsWindowUs(windowUs);
+                }
+            }
+            // Propagate metrics window to crunch tasks
+            for (std::size_t c = 0; c < kCoreCount; ++c)
+            {
+                if (S::s_cores[c].crunchTask)
+                {
+                    S::s_cores[c].crunchTask->timer().setMetricsWindowUs(windowUs);
                 }
             }
             S::s_schedulerHealth.setMetricsWindowUs(windowUs);
@@ -678,6 +737,60 @@ template <typename Cfg> class SystemBuilder
             }
         }
 
+        return {true, nullptr};
+    }
+
+    // -----------------------------------------------------------------------
+    // CRUNCH mode validation
+    // -----------------------------------------------------------------------
+
+    /**
+     * @brief Validate CRUNCH core constraints.
+     *
+     * Checks:
+     * 1. `ICrunchTask` cannot be registered on Core 0.
+     * 2. A CRUNCH core may have exactly one `ICrunchTask` and zero other tasks.
+     * 3. `kCoreCount >= 2` when any core is CRUNCH mode.
+     * 4. `crunchPeriodUs() >= CfgMinSchedulePeriodUs`.
+     *
+     * @return BuildResult with ok=false if a constraint is violated.
+     */
+    BuildResult validateCrunchConstraints() const
+    {
+        for (std::size_t c = 0; c < kCoreCount; ++c)
+        {
+            if (S::s_cores[c].mode != Kernel::CoreDispatchMode::CRUNCH)
+                continue;
+
+            // Rule 1: Core 0 must remain FLAT_LOOP
+            if (c == 0)
+            {
+                return {false, "ICrunchTask cannot be registered on Core 0"};
+            }
+
+            // Rule 2: CRUNCH core must have exactly one ICrunchTask and zero other tasks
+            if (!S::s_cores[c].crunchTask)
+            {
+                return {false, "CRUNCH core has no ICrunchTask"};
+            }
+            if (S::s_cores[c].taskCount > 0)
+            {
+                return {false, "CRUNCH core cannot have other tasks"};
+            }
+
+            // Rule 3: kCoreCount must be >= 2
+            if constexpr (kCoreCount < 2)
+            {
+                return {false, "CRUNCH mode requires kCoreCount >= 2"};
+            }
+
+            // Rule 4: crunchPeriodUs() must meet the minimum schedule period
+            ICrunchTask *ct = S::s_cores[c].crunchTask;
+            if (ct->crunchPeriodUs() > 0 && ct->crunchPeriodUs() < CfgMinSchedulePeriodUs<Cfg>::value)
+            {
+                return {false, "Crunch task period below minimum"};
+            }
+        }
         return {true, nullptr};
     }
 

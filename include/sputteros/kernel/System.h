@@ -44,6 +44,7 @@
  */
 
 #include "sputteros/ConfigTraits.h"
+#include "sputteros/kernel/CoreDispatchMode.h"
 #include "sputteros/kernel/KernelState.h"
 #include "sputteros/kernel/metrics/CoreUtilizationTracker.h"
 #include "sputteros/kernel/metrics/SchedulerHealthMetrics.h"
@@ -54,6 +55,7 @@
 #include "sputteros/osal/sync/MultiCoreSync.h"
 #include "sputteros/osal/sync/WatchdogSync.h"
 #include "sputteros/osal/tasks/IBackgroundTask.h"
+#include "sputteros/osal/tasks/ICrunchTask.h"
 #include "sputteros/osal/tasks/ITask.h"
 #include "sputteros/utils/MemoryProfiler.h"
 #include "sputteros/utils/PerformanceSnapshot.h"
@@ -162,8 +164,14 @@ template <typename Cfg> class System
         ITask      *tasks[kMaxTasks] = {};
         std::size_t taskCount        = 0;
 
-        /** @brief Whether this core has any tasks. */
-        bool isActive() const { return taskCount > 0; }
+        /** @brief Dispatch strategy for this core (default: FLAT_LOOP). */
+        Kernel::CoreDispatchMode mode = Kernel::CoreDispatchMode::FLAT_LOOP;
+
+        /** @brief Exclusive crunch task for CRUNCH mode (nullptr in FLAT_LOOP). */
+        ICrunchTask *crunchTask = nullptr;
+
+        /** @brief Whether this core has any tasks (scheduled or crunch). */
+        bool isActive() const { return taskCount > 0 || crunchTask != nullptr; }
 
         /** @brief Get a task pointer by index. */
         ITask *task(std::size_t idx) const { return (idx < taskCount) ? tasks[idx] : nullptr; }
@@ -228,6 +236,12 @@ template <typename Cfg> class System
             {
                 tsk->init();
             }
+        }
+
+        // Initialize crunch task on CRUNCH-mode cores
+        if (s_cores[coreId].mode == Kernel::CoreDispatchMode::CRUNCH && s_cores[coreId].crunchTask)
+        {
+            s_cores[coreId].crunchTask->init();
         }
 
         // Initialize background tasks on the designated background core
@@ -382,10 +396,25 @@ template <typename Cfg> class System
         // Phase 3: Wait for all cores to be ready
         s_sync.startupBarrier(coreId, std::chrono::milliseconds{2000});
 
-        // Phase 4: Busy-wait tick loop
-        while (isActiveState(s_kernelState) && !anyStopConditionFired())
+        // Phase 4: Dispatch based on core mode
+        auto &core = s_cores[coreId];
+
+        if (core.mode == Kernel::CoreDispatchMode::CRUNCH && core.crunchTask)
         {
-            tick(coreId, s_timer.nowMicros());
+            // CRUNCH mode: tight loop delegated to CrunchDispatcher (WP-3).
+            // Stub: run crunch iterations until stop condition fires.
+            while (isActiveState(s_kernelState) && !anyStopConditionFired())
+            {
+                core.crunchTask->crunch(s_timer.nowMicros());
+            }
+        }
+        else
+        {
+            // FLAT_LOOP mode: existing tick-based dispatch
+            while (isActiveState(s_kernelState) && !anyStopConditionFired())
+            {
+                tick(coreId, s_timer.nowMicros());
+            }
         }
 
         // Phase 5: Kernel state shutdown (best-effort, first core wins)

@@ -358,3 +358,177 @@ TEST(SystemBuilderDep, Build_ErrorLoggerAccessiblePreAndPostBuild)
     // Still accessible after build.
     EXPECT_EQ(System<Cfg>::errorLogger().count(), 0u);
 }
+
+// ===========================================================================
+// CRUNCH mode validation (WP-2)
+// ===========================================================================
+
+/**
+ * @brief Multi-core config for CRUNCH mode tests.
+ */
+template <int N> struct CrunchTestCfg
+{
+    enum class State : uint8_t
+    {
+        IDLE = 0
+    };
+    enum class CmdID : uint8_t
+    {
+        NONE = 0
+    };
+    struct Command
+    {
+        CmdID   id;
+        uint8_t targetDevice;
+        float   value;
+    };
+    static constexpr int         kMaxCommandsPerTick = 8;
+    static constexpr uint8_t     kMaxValidCommandID  = 0;
+    static constexpr std::size_t kCoreCount          = 2;
+    static constexpr std::size_t kQueueCapacity      = 16;
+};
+
+/**
+ * @brief Minimal ICrunchTask test double for builder validation.
+ */
+class StubCrunchTask : public ICrunchTask
+{
+  public:
+    void          init() override {}
+    void          tick(SputterMicros) override {}
+    void          crunch(SputterMicros) override { ++m_crunchCount; }
+    SputterMicros crunchPeriodUs() const override { return m_period; }
+    SputterMicros maxIterationUs() const override { return 200; }
+
+    void setPeriod(SputterMicros p) { m_period = p; }
+
+    uint32_t crunchCount() const { return m_crunchCount; }
+
+  private:
+    SputterMicros m_period{163};
+    uint32_t      m_crunchCount{0};
+};
+
+TEST(SystemBuilderCrunch, Build_SucceedsWithCrunchTaskOnCore1)
+{
+    using Cfg = CrunchTestCfg<1>;
+    NiceMock<MockUserApplication<Cfg>> app;
+    NiceMock<MockSafetyMonitor>        monitor;
+    NiceMock<MockStreamReader>         stream;
+    ON_CALL(monitor, isSafe()).WillByDefault(Return(true));
+    std::array<ISafetyMonitor *, 1> monitors = {&monitor};
+
+    StubCrunchTask     crunchTask;
+    SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
+    builder.setStream(&stream);
+    builder.core(1).setCrunchTask(&crunchTask);
+
+    BuildResult result = builder.build();
+    EXPECT_TRUE(result.ok) << result.error;
+}
+
+TEST(SystemBuilderCrunch, Build_RejectsCrunchTaskOnCore0)
+{
+    using Cfg = CrunchTestCfg<2>;
+    NiceMock<MockUserApplication<Cfg>> app;
+    NiceMock<MockSafetyMonitor>        monitor;
+    NiceMock<MockStreamReader>         stream;
+    ON_CALL(monitor, isSafe()).WillByDefault(Return(true));
+    std::array<ISafetyMonitor *, 1> monitors = {&monitor};
+
+    StubCrunchTask     crunchTask;
+    SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
+    builder.setStream(&stream);
+    builder.core(0).setCrunchTask(&crunchTask);
+
+    BuildResult result = builder.build();
+    EXPECT_FALSE(result.ok);
+    EXPECT_STREQ(result.error, "ICrunchTask cannot be registered on Core 0");
+}
+
+TEST(SystemBuilderCrunch, Build_RejectsCrunchCoreWithOtherTasks)
+{
+    using Cfg = CrunchTestCfg<3>;
+    NiceMock<MockUserApplication<Cfg>> app;
+    NiceMock<MockSafetyMonitor>        monitor;
+    NiceMock<MockStreamReader>         stream;
+    ON_CALL(monitor, isSafe()).WillByDefault(Return(true));
+    std::array<ISafetyMonitor *, 1> monitors = {&monitor};
+
+    StubCrunchTask crunchTask;
+    SatisfiedTask  extraTask;
+
+    SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
+    builder.setStream(&stream);
+    builder.core(1).setCrunchTask(&crunchTask);
+    builder.core(1).addScheduledTask(&extraTask);
+
+    BuildResult result = builder.build();
+    EXPECT_FALSE(result.ok);
+    EXPECT_STREQ(result.error, "CRUNCH core cannot have other tasks");
+}
+
+TEST(SystemBuilderCrunch, Build_RejectsSingleCoreCrunch)
+{
+    using Cfg = DepTestCfg<20>; // kCoreCount = 1
+    NiceMock<MockUserApplication<Cfg>> app;
+    NiceMock<MockSafetyMonitor>        monitor;
+    NiceMock<MockStreamReader>         stream;
+    ON_CALL(monitor, isSafe()).WillByDefault(Return(true));
+    std::array<ISafetyMonitor *, 1> monitors = {&monitor};
+
+    // On single-core, core(0) is the only core. Setting CRUNCH on it
+    // should fail because Core 0 must remain FLAT_LOOP.
+    StubCrunchTask     crunchTask;
+    SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
+    builder.setStream(&stream);
+    builder.core(0).setCrunchTask(&crunchTask);
+
+    BuildResult result = builder.build();
+    EXPECT_FALSE(result.ok);
+    EXPECT_STREQ(result.error, "ICrunchTask cannot be registered on Core 0");
+}
+
+TEST(SystemBuilderCrunch, Build_RejectsCrunchPeriodBelowMinimum)
+{
+    using Cfg = CrunchTestCfg<4>;
+    NiceMock<MockUserApplication<Cfg>> app;
+    NiceMock<MockSafetyMonitor>        monitor;
+    NiceMock<MockStreamReader>         stream;
+    ON_CALL(monitor, isSafe()).WillByDefault(Return(true));
+    std::array<ISafetyMonitor *, 1> monitors = {&monitor};
+
+    StubCrunchTask crunchTask;
+    crunchTask.setPeriod(1); // Below CfgMinSchedulePeriodUs default (10 µs)
+
+    SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
+    builder.setStream(&stream);
+    builder.core(1).setCrunchTask(&crunchTask);
+
+    BuildResult result = builder.build();
+    EXPECT_FALSE(result.ok);
+    EXPECT_STREQ(result.error, "Crunch task period below minimum");
+}
+
+TEST(SystemBuilderCrunch, Build_CoreDataModeSetToCrunch)
+{
+    using Cfg = CrunchTestCfg<5>;
+    NiceMock<MockUserApplication<Cfg>> app;
+    NiceMock<MockSafetyMonitor>        monitor;
+    NiceMock<MockStreamReader>         stream;
+    ON_CALL(monitor, isSafe()).WillByDefault(Return(true));
+    std::array<ISafetyMonitor *, 1> monitors = {&monitor};
+
+    StubCrunchTask     crunchTask;
+    SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
+    builder.setStream(&stream);
+    builder.core(1).setCrunchTask(&crunchTask);
+
+    BuildResult result = builder.build();
+    ASSERT_TRUE(result.ok) << result.error;
+
+    // Core 0 should remain FLAT_LOOP, Core 1 should be CRUNCH
+    EXPECT_EQ(System<Cfg>::taskCount(0), 2u); // ControlTask + CommsTask (multi-core)
+    // Core 1 has zero scheduled tasks but one crunch task
+    EXPECT_EQ(System<Cfg>::taskCount(1), 0u);
+}

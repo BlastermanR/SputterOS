@@ -55,8 +55,7 @@ UserProject/
         │   │   ├── tasks/            # Task abstraction layer
         │   │   │   ├── ITask.h        # Base task with device dependency tracking
         │   │       ├── IScheduledTask.h # Periodic deadline-scheduled task interface
-        │   │       ├── IBackgroundTask.h # Best-effort background task interface
-        │   │       ├── ICriticalTask.h # Compatibility shim for IScheduledTask
+        │   │       ├── IBackgroundTask.h # Best-effort background task interface        │       ├── ICrunchTask.h    # Exclusive-core blocking-tolerant tight-loop interface        │   │       ├── ICriticalTask.h # Compatibility shim for IScheduledTask
         │   │       └── IAsyncTask.h   # Compatibility shim for IScheduledTask
         │   │   │
         │   │   └── sync/             # Synchronization & queuing primitives

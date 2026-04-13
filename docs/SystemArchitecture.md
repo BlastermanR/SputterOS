@@ -44,7 +44,7 @@ graph TB
     end
 
     subgraph "OSAL Interfaces"
-        IT["ITask / ICriticalTask / IAsyncTask"]
+        IT["ITask / IScheduledTask / IBackgroundTask / ICrunchTask"]
         IMQ["IMessageQueue&lt;Cfg&gt;"]
         ICP["ICommandProducer / ICommandConsumer"]
     end
@@ -94,7 +94,8 @@ Configuration-only builder. Holds user-provided kernel dependencies (`IUserAppli
 4. builder.setTelemetryDrain(writeFn, ctx)             — wire telemetry output
 5. builder.setTelemetryMutex(&mutex)                   — (multi-core) guard shared logger
 6. builder.addStopCondition(predicate)                 — register exit conditions
-7. builder.core(0).addScheduledTask(&customTask)       — optional user tasks
+7. builder.core(0).addScheduledTask(&customTask)       — optional user tasks (FLAT_LOOP core)
+   builder.core(1).setCrunchTask(&crunchTask)          — OR: dedicate Core 1 to a tight-loop ICrunchTask
 8. auto result = builder.build()                       — validate + populate System
 9. System<Cfg>::run(coreId)                            — blocking run loop
 ```
