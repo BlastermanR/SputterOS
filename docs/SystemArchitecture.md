@@ -281,7 +281,7 @@ Pure abstract C++ interfaces. All inherit `ISputterDevice` (non-copyable, protec
 The OSAL layer is organized into two subfolders:
 
 - **`tasks/`** — Task abstraction hierarchy (`ITask`, `ICriticalTask`, `IAsyncTask`)
-- **`sync/`** — Synchronization and queuing primitives (`IMessageQueue`, `LockFreeQueue`, `MultiCoreSync`, `WatchdogSync`, `IMutex`, etc.)
+- **`sync/`** — Synchronization and queuing primitives (`IMessageQueue`, `LockFreeQueue`, `AtomicDoubleBuffer`, `MultiCoreSync`, `WatchdogSync`, `IMutex`, etc.)
 - **Root** — Shared types (`SputterTime.h` — 64-bit µs time type and `SystemTimer` class)
 
 ### Task Hierarchy
@@ -375,6 +375,7 @@ classDiagram
 
 | Class | Purpose |
 |---|---|
+| `AtomicDoubleBuffer<T, CachePolicy>` | Wait-free SWSR double buffer for latest-value cross-core data sharing. `write()` stores with `memory_order_release`; `read()` loads with `memory_order_acquire`. Default `NoCachePolicy` is zero-cost on cache-coherent platforms; provide a custom `CachePolicy` with `flushBuffer`/`invalidateBuffer` statics for devices with non-coherent D-cache (STM32H7, ESP32-S3). |
 | `MultiCoreSync<N>` | Per-core lifecycle state machine: `UNBORN → INIT → READY → SHUTDOWN` (or `ERROR`). Startup/shutdown barriers with `std::chrono::milliseconds` timeouts. |
 | `WatchdogSync<N>` | Atomic heartbeat per core. `kick(coreId, time)` updates timestamp; `isStale(coreId, time, timeout)` detects hangs. |
 | `NoOpMultiCoreSync` | Stub for single-core configs (`kCoreCount < 2`). All methods are no-ops. |

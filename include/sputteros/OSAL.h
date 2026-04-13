@@ -26,6 +26,7 @@
 #include "sputteros/osal/tasks/ITask.h"
 
 // ── Synchronization ─────────────────────────────────────────────────────────
+#include "sputteros/osal/sync/AtomicDoubleBuffer.h"
 #include "sputteros/osal/sync/ICommandConsumer.h"
 #include "sputteros/osal/sync/ICommandProducer.h"
 #include "sputteros/osal/sync/ICoreErrorHandler.h"
