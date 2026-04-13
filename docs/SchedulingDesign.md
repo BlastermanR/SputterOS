@@ -393,12 +393,47 @@ Background tasks are initialized by `System::init()` on the background core and 
 
 ## 7. Crunch Core Mode
 
-A core running in `CoreDispatchMode::CRUNCH` is dedicated entirely to one `ICrunchTask`. The kernel's Phase 1 and Phase 2 scheduling does **not** run on that core — instead `System::run()` executes a bare loop:
+A core running in `CoreDispatchMode::CRUNCH` is dedicated entirely to one `ICrunchTask`. The kernel's Phase 1 and Phase 2 scheduling does **not** run on that core — instead `System::run()` delegates to `CrunchDispatcher<Cfg>::runLoop()` which executes a tight loop with safety abort checking, watchdog kicks, and overrun detection:
 
 ```cpp
-// Simplified from System<Cfg>::run(), CRUNCH branch:
-while (isActiveState(s_kernelState) && !anyStopConditionFired())
-    core.crunchTask->crunch(s_timer.nowMicros());
+// From CrunchDispatcher<Cfg>::runLoop() — called by System<Cfg>::run(), CRUNCH branch:
+
+// Pre-loop: check abort before entering (handles aborts signalled during init)
+if (S::isSafetyAborted()) {
+    m_task->onCrunchAbort();
+    S::errorLogger().log(ErrorCode::SOFT_ABORT, S::timer().nowMicros(), 0.0f);
+    return;
+}
+
+while (S::isActiveState(S::kernelState()) && !S::anyStopConditionFired()) {
+    // 1. Safety abort check (acquire load — sub-nanosecond)
+    if (S::isSafetyAborted()) {
+        m_task->onCrunchAbort();
+        S::errorLogger().log(ErrorCode::SOFT_ABORT, S::timer().nowMicros(), 0.0f);
+        return;
+    }
+    // 2. Watchdog kick
+    SputterMicros now = S::timer().nowMicros();
+    S::watchdog().kick(coreId, now);
+    if (m_watchdogKick) m_watchdogKick();
+    // 3. Dispatch crunch iteration with timing
+    SputterMicros start = S::timer().nowMicros();
+    m_task->crunch(now);
+    SputterMicros elapsed = S::timer().nowMicros() - start;
+    // 4. Overrun detection
+    if (elapsed > m_task->maxIterationUs()) {
+        ++m_consecutiveOverruns;
+        ++m_totalOverruns;
+        S::errorLogger().log(ErrorCode::CRUNCH_OVERRUN, now, static_cast<float>(elapsed));
+        if (m_consecutiveOverruns >= CfgCrunchMaxOverruns<Cfg>::value) {
+            m_task->onCrunchAbort();
+            S::errorLogger().log(ErrorCode::HARD_FAULT, now, ...);
+            return;   // exit loop — hard abort
+        }
+    } else {
+        m_consecutiveOverruns = 0;  // reset on clean iteration
+    }
+}
 ```
 
 This gives the crunch task exclusive CPU access and allows bounded blocking (e.g., blocking SPI transactions within `maxIterationUs()`) that would be unsafe in the cooperative `FLAT_LOOP` scheduler.
@@ -436,7 +471,33 @@ When Core 1 is set to `CRUNCH`, `SystemBuilder::build()` auto-places `ScheduledC
 
 ### 7.4 Overrun Handling
 
-If `crunch()` executes for longer than `maxIterationUs()` consecutively `kCrunchMaxOverruns` times (default 10), `onCrunchAbort()` is called on the task. The crunch loop continues unless the task or a stop condition explicitly exits.
+If `crunch()` executes for longer than `maxIterationUs()` consecutively `kCrunchMaxOverruns` times (default 10), `CrunchDispatcher` calls `onCrunchAbort()` on the task, logs a `HARD_FAULT` to `ErrorLogger`, and **exits the crunch loop**, causing `System::run()` to return on that core.
+
+A single clean iteration (elapsed ≤ `maxIterationUs()`) resets the consecutive counter to zero — only uninterrupted consecutive overruns trigger the abort.
+
+### 7.5 Safety Abort Bridge
+
+When the `ControlTask` on Core 0 detects a safety failure in `evaluateSafety()`, it calls `System<Cfg>::signalSafetyAbort()` immediately after `IUserApplication::forceSafeAbort()`. This sets an `inline static std::atomic<bool> s_safetyAbort` flag with `memory_order_release`.
+
+`CrunchDispatcher::runLoop()` checks `System<Cfg>::isSafetyAborted()` (acquire load) **before each crunch iteration** plus a pre-loop check before entering the dispatch loop. When the flag is seen:
+
+1. `m_task->onCrunchAbort()` is called.
+2. `SOFT_ABORT` is logged to `ErrorLogger`.
+3. The crunch loop exits immediately (returns from `runLoop()`).
+
+```
+Core 0 (ControlTask)            Core 1 (CrunchDispatcher)
+────────────────────            ─────────────────────────
+evaluateSafety() fails
+forceSafeAbort()                crunch(now)
+System::signalSafetyAbort()     ← release store
+                                 ...
+                                isSafetyAborted() == true  ← acquire load
+                                onCrunchAbort()
+                                return
+```
+
+This provides bounded cross-core abort latency: at most one additional `crunch()` call executes after the signal is set (the one in-flight when the acquire load checks the flag). The `s_safetyAbort` flag is reset to `false` by `System::reset()` and can also be cleared explicitly via `System::clearSafetyAbort()`.
 
 ---
 

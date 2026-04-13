@@ -166,6 +166,9 @@ When `IUserApplication` is non-null:
 | `s_backgroundTaskCount` | `std::size_t` | Number of registered background tasks |
 | `s_bgRoundRobin` | `std::size_t` | Current background ring dispatch index |
 | `s_backgroundCoreId` | `std::size_t` | Core that runs Phase 2 background dispatch |
+| `s_crunchDispatcher` | `CrunchDispatcher<Cfg>` | CRUNCH-mode core runtime; configured and driven by `run()` on CRUNCH cores |
+| `s_watchdogKickFn` | `WatchdogKickFn` | Platform watchdog kick callback stored once at build time and forwarded to `CrunchDispatcher` |
+| `s_safetyAbort` | `std::atomic<bool>` | Cross-core safety abort flag; set (release store) by `ControlTask::evaluateSafety()`, read (acquire load) by `CrunchDispatcher` each iteration |
 | `s_built` | `bool` | Guard flag set by `build()` |
 | `s_lastTime[]` | `SputterMicros[kCoreCount]` | Last observed tick time per core for rollover detection |
 | `s_telemetryLogger` | `TelemetryLogger` | Kernel-owned shared telemetry logger |
@@ -191,6 +194,9 @@ When `IUserApplication` is non-null:
 | `memProfiler()` | Access the kernel-owned memory profiler |
 | `isBuilt()` | Query whether `build()` has been called |
 | `kernelState()` | Current lifecycle state (`UNCONFIGURED` through `SHUTDOWN`) |
+| `signalSafetyAbort()` | Set the cross-core safety abort flag (`memory_order_release`). Called by `ControlTask` on safety failure; read by `CrunchDispatcher` on CRUNCH cores. |
+| `isSafetyAborted()` | Query the safety abort flag (`memory_order_acquire`). Returns `true` if a safety abort was signalled. |
+| `clearSafetyAbort()` | Clear the safety abort flag (`memory_order_relaxed`). Also cleared automatically by `reset()`. |
 | `taskCount(coreId)` | Number of tasks registered on a core |
 | `task(coreId, idx)` | Get a task pointer by core and index |
 
@@ -215,7 +221,7 @@ flowchart LR
     B --> C["IUserApplication::tick()"]
 ```
 
-1. **`evaluateSafety()`** — iterate all `ISafetyMonitor` instances. First `isSafe() == false` → `IUserApplication::forceSafeAbort()` + early return
+1. **`evaluateSafety()`** — iterate all `ISafetyMonitor` instances. First `isSafe() == false` → `IUserApplication::forceSafeAbort()` + `System<Cfg>::signalSafetyAbort()` (releases abort flag for CRUNCH cores) + early return
 2. **`processCommands()`** — drain up to `CfgMaxCommandsPerTick<Cfg>::value` commands via `ICommandConsumer::try_pop()` → `IUserApplication::handleCommand()`
 3. **`IUserApplication::tick(systemTime)`**
 
@@ -437,6 +443,7 @@ SputterOS uses **compile-time template parameters**. Define a plain struct satis
 | `kControlBudgetUs` | `static constexpr uint32_t` | Optional | 10000 (10 ms / 100 Hz) |
 | `kMetricsWindowUs` | `static constexpr uint64_t` | Optional | 60 000 000 (60 s) |
 | `kMaxBackgroundTasks` | `static constexpr std::size_t` | Optional | 16 |
+| `kCrunchMaxOverruns` | `static constexpr uint32_t` | Optional | 10 |
 
 `ConfigValidator<Cfg>` enforces `static_assert` checks at template instantiation.
 
@@ -529,9 +536,10 @@ These two safety mechanisms serve different tiers and should not be confused:
 
 | Task Type | Core 0 | Core 1+ | Background Ring |
 |---|---|---|---|
-| `IScheduledTask` (user) | Allowed | Allowed | — |
+| `IScheduledTask` (user) | Allowed | Allowed (FLAT_LOOP core only) | — |
 | `ScheduledControlTask` | Always Core 0 | N/A | — |
-| `ScheduledCommsTask` | Single-core only | Always Core 1 | — |
+| `ScheduledCommsTask` | Single-core; or Core 0 fallback when Core 1 is CRUNCH | Core 1 in standard dual-core | — |
+| `ICrunchTask` | Not allowed (Core 0 is reserved for safety loop) | Core 1+ only; one per core; no other tasks on that core | — |
 | `IBackgroundTask` | Dispatched if `s_backgroundCoreId == 0` | Dispatched if `s_backgroundCoreId == coreId` | **Registered here** |
 | `BackgroundDiagnosticsTask` | Core 0 (single-core) | Core 1 (dual-core) | Slot 0 |
 

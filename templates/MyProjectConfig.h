@@ -256,6 +256,31 @@ struct MyProjectConfig
      */
     // static constexpr std::size_t kMaxBackgroundTasks = 16;
 
+    // =====================================================================
+    //  OPTIONAL — CRUNCH Core Mode
+    // =====================================================================
+
+    /**
+     * @brief Consecutive WCET overrun threshold for ICrunchTask abort.
+     *
+     * `CrunchDispatcher` counts consecutive iterations where `crunch()`
+     * runs longer than `ICrunchTask::maxIterationUs()`. When the count
+     * reaches this threshold, `onCrunchAbort()` is called on the task
+     * and the crunch loop exits.
+     *
+     * A single clean iteration (elapsed ≤ `maxIterationUs()`) resets
+     * the consecutive counter to zero.
+     *
+     * Set to 0 to disable overrun escalation entirely (CRUNCH loop never
+     * aborts due to overruns — only safety abort or stop condition exits).
+     *
+     * Only relevant when `kCoreCount >= 2` and a core is placed in
+     * `CoreDispatchMode::CRUNCH` via `CoreBuilder::setCrunchTask()`.
+     *
+     * Default: 10
+     */
+    // static constexpr uint32_t kCrunchMaxOverruns = 10;
+
     /**
      * @brief ErrorLogger circular buffer capacity (entries).
      *
