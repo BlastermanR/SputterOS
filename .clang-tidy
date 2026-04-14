@@ -1,0 +1,81 @@
+# ────────────────────────────────────────────────────────────────────────────
+# .clang-tidy — SputterOS Static Analysis Configuration
+# ────────────────────────────────────────────────────────────────────────────
+# Usage:
+#   make tidy             Run clang-tidy on all library sources
+#   clang-tidy -p <build> <file>   Run on a single file
+#
+# Requires: clang-tidy (LLVM toolchain)
+# ────────────────────────────────────────────────────────────────────────────
+
+# Enable a curated set of checks appropriate for a zero-heap, safety-critical,
+# C++17 embedded library that uses raw pointers by design (no smart pointers).
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  cert-*,
+  -cert-err58-cpp,
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  misc-*,
+  -misc-non-private-member-variables-in-classes,
+  -misc-no-recursion,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  -modernize-use-nodiscard,
+  performance-*,
+  readability-*,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -readability-else-after-return
+
+WarningsAsErrors: ''
+
+HeaderFilterRegex: 'include/sputteros/.*\.h$'
+
+CheckOptions:
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: camelBack
+  - key: readability-identifier-naming.MethodCase
+    value: camelBack
+  - key: readability-identifier-naming.VariableCase
+    value: camelBack
+  - key: readability-identifier-naming.MemberPrefix
+    value: ''
+  - key: readability-identifier-naming.PrivateMemberPrefix
+    value: m_
+  - key: readability-identifier-naming.StaticVariablePrefix
+    value: s_
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: CamelCase
+  - key: readability-identifier-naming.ConstexprVariablePrefix
+    value: k
+  - key: readability-identifier-naming.NamespaceCase
+    value: CamelCase
+  - key: readability-identifier-naming.TemplateParameterCase
+    value: CamelCase
+  - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+    value: true
+  - key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor
+    value: true
+  - key: performance-unnecessary-value-param.AllowedTypes
+    value: 'SputterMicros'
+
+FormatStyle: file

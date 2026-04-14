@@ -73,7 +73,6 @@ SputterOS **never touches hardware directly**. Every GPIO, UART handle, and OS p
 
 ```bash
 git submodule add <repo-url> lib/SputterOS
-git submodule update --init --recursive
 ```
 
 ### 1b. Wire CMake
@@ -360,7 +359,7 @@ If you add custom user tasks (beyond the kernel-provided ControlTask, CommsTask,
 
 ### How It Works
 
-1. Your custom task inherits `ITask` (or `ICriticalTask` / `IAsyncTask`).
+1. Your custom task inherits `ITask` (or `IScheduledTask` / `IBackgroundTask` / `ICrunchTask`).
 2. Call `addDevice()` in setter methods to register each device the task needs.
 3. Override `validateDependencies()` to return `false` if required devices are missing.
 4. `SystemBuilder::build()` calls `validateDependencies()` on every registered task. If any task returns `false`, the build fails with `"Task dependency validation failed"`.
@@ -689,6 +688,6 @@ builder.setTelemetryMutex(&telemetryMutex);
 | `error: 'ControlTask()' is private` | Attempted direct kernel task construction | Use `SystemBuilder<Cfg>` — kernel tasks are created by `build()` |
 | `warning: ignoring return value of 'build()'` | `build()` result discarded (`[[nodiscard]]` attribute) | Assign: `const BuildResult r = builder.build(); if (!r) { … }` |
 | Assertion `s_built` fires at runtime | `System::init()` or `System::tick()` called before `build()` | Call `builder.build()` and verify it succeeds before calling `System::init()` or `System::tick()` |
-| Core affinity violation error from `build()` | `ICriticalTask` placed on Core 1+ or `IAsyncTask` on Core 0 | `SystemBuilder` auto-assigns kernel tasks by type. User tasks inheriting `ICriticalTask` must be on Core 0; `IAsyncTask` on Core 1+ (or Core 0 in single-core mode) |
+| Core affinity violation error from `build()` | `IScheduledTask` or `ICrunchTask` placed on wrong core | `SystemBuilder` auto-assigns kernel tasks by type. `ICrunchTask` requires a dedicated core (Core 1+). `ScheduledControlTask` runs on Core 0. |
 | `"Task dependency validation failed"` from `build()` | A custom user task's `validateDependencies()` returned `false` | Ensure all required devices are registered via `addDevice()` before calling `build()`. Check which task is missing a setter call. |
 

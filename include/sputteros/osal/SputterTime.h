@@ -16,18 +16,16 @@
  * access. On the RP2350, this wraps the Pico SDK's native
  * `to_us_since_boot(get_absolute_time())`.
  *
- * `SystemTimer` wraps the injected clock source and exposes a
- * convenience API via the nholthaus/units library for callers that
- * need type-safe conversions (milliseconds, seconds, etc.). The units
- * API uses `double` representation and is intended for non-hot-path
- * code only (logging, display, configuration).
+ * `SystemTimer` wraps the injected clock source and exposes
+ * convenience getters that return `double` values in standard time
+ * units (microseconds, milliseconds, seconds). These are intended
+ * for non-hot-path code only (logging, display, configuration).
  *
  * @author Ryan Massie (rmassie)
  * @date 4/9/2026
  */
 
 #include <cstdint>
-#include <units.h>
 
 namespace SputterOS
 {
@@ -61,16 +59,16 @@ using MicrosecondSource = uint64_t (*)();
  * @brief OS-level timer wrapping an injectable microsecond clock source.
  *
  * Provides raw `uint64_t` access for the kernel hot path and
- * nholthaus/units convenience getters for non-critical code
+ * `double`-returning convenience getters for non-critical code
  * (logging, display, configuration).
  *
  * Owned by `System<Cfg>` as an `inline static` member and
  * accessible via `System<Cfg>::timer()`.
  *
- * @note The units library uses `double` as its default representation.
+ * @note The convenience getters use `double` representation.
  *       On targets with no hardware double FPU (e.g. RP2350 Cortex-M33),
- *       the convenience getters are software-emulated. Use `nowMicros()`
- *       in timing-critical paths.
+ *       these are software-emulated. Use `nowMicros()` in timing-critical
+ *       paths.
  */
 class SystemTimer
 {
@@ -116,54 +114,45 @@ class SystemTimer
     SputterMicros nowMicros() const { return m_source ? (m_source() - m_epoch) : 0; }
 
     // -----------------------------------------------------------------
-    // Units Library Convenience API (non-hot-path)
+    // Convenience API (non-hot-path, double representation)
     // -----------------------------------------------------------------
 
     /**
-     * @brief Current time as a units::time::microsecond_t.
+     * @brief Current time in microseconds as a `double`.
      */
-    units::time::microsecond_t microseconds() const { return toMicroseconds(nowMicros()); }
+    double microseconds() const { return toMicroseconds(nowMicros()); }
 
     /**
-     * @brief Current time as a units::time::millisecond_t.
+     * @brief Current time in milliseconds as a `double`.
      */
-    units::time::millisecond_t milliseconds() const { return toMilliseconds(nowMicros()); }
+    double milliseconds() const { return toMilliseconds(nowMicros()); }
 
     /**
-     * @brief Current time as a units::time::second_t.
+     * @brief Current time in seconds as a `double`.
      */
-    units::time::second_t seconds() const { return toSeconds(nowMicros()); }
+    double seconds() const { return toSeconds(nowMicros()); }
 
     // -----------------------------------------------------------------
     // Static Conversion Helpers
     // -----------------------------------------------------------------
 
     /**
-     * @brief Convert a raw µs count to units::time::microsecond_t.
+     * @brief Convert a raw µs count to microseconds as `double`.
      * @param us: Raw microsecond value.
      */
-    static units::time::microsecond_t toMicroseconds(SputterMicros us)
-    {
-        return units::time::microsecond_t(static_cast<double>(us));
-    }
+    static double toMicroseconds(SputterMicros us) { return static_cast<double>(us); }
 
     /**
-     * @brief Convert a raw µs count to units::time::millisecond_t.
+     * @brief Convert a raw µs count to milliseconds as `double`.
      * @param us: Raw microsecond value.
      */
-    static units::time::millisecond_t toMilliseconds(SputterMicros us)
-    {
-        return units::time::millisecond_t(static_cast<double>(us) / 1000.0);
-    }
+    static double toMilliseconds(SputterMicros us) { return static_cast<double>(us) / 1000.0; }
 
     /**
-     * @brief Convert a raw µs count to units::time::second_t.
+     * @brief Convert a raw µs count to seconds as `double`.
      * @param us: Raw microsecond value.
      */
-    static units::time::second_t toSeconds(SputterMicros us)
-    {
-        return units::time::second_t(static_cast<double>(us) / 1000000.0);
-    }
+    static double toSeconds(SputterMicros us) { return static_cast<double>(us) / 1000000.0; }
 
   private:
     MicrosecondSource m_source;   /**< @brief Injected platform clock. */

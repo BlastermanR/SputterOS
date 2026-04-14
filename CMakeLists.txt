@@ -1,28 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 
-project(SputterOS VERSION 0.2.0 LANGUAGES CXX)
-
-# ── Initialize Git Submodules ────────────────────────────────────────────────
-# Ensure all submodules are initialized and updated before building
-find_package(Git QUIET)
-if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
-    message(STATUS "Initializing and updating Git submodules...")
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        RESULT_VARIABLE GIT_SUBMODULE_RESULT
-    )
-    if(NOT GIT_SUBMODULE_RESULT EQUAL 0)
-        message(WARNING "Failed to update submodules (exit code: ${GIT_SUBMODULE_RESULT})")
-    endif()
-    
-    # Verify that lib/units exists
-    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lib/units/CMakeLists.txt")
-        message(FATAL_ERROR "Submodule lib/units not found. Please ensure the repository has been properly cloned with --recursive flag.")
-    endif()
-else()
-    message(WARNING "Git not found or .git directory missing. Submodules will not be automatically initialized.")
-endif()
+project(SputterOS VERSION 0.5.0 LANGUAGES CXX)
 
 set(LIB_NAME SputterOS)
 
@@ -72,15 +50,6 @@ target_include_directories(${LIB_NAME} PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
-
-# ── Units library (header-only, for physical quantity management) ──────────────
-# Configuration for embedded environments
-set(DISABLE_IOSTREAM ON CACHE BOOL "Disable iostream in units library for embedded" FORCE)
-# Enable all predefined units for maximum flexibility
-set(DISABLE_PREDEFINED_UNITS OFF CACHE BOOL "Enable all predefined units" FORCE)
-
-add_subdirectory(lib/units)
-target_link_libraries(${LIB_NAME} PUBLIC units)
 
 # Export the library for use as a submodule in other projects
 set_target_properties(${LIB_NAME} PROPERTIES EXPORT_NAME SputterOS)

@@ -3,8 +3,8 @@
  * @brief Unit tests for SputterTime types and SystemTimer.
  *
  * Validates clock source injection, `nowMicros()` forwarding, the
- * `hasClockSource()` predicate, and the nholthaus/units convenience
- * getters (microseconds, milliseconds, seconds).
+ * `hasClockSource()` predicate, and the convenience getters
+ * (microseconds, milliseconds, seconds).
  *
  * @author Ryan Massie (rmassie)
  * @date 4/10/2026
@@ -99,7 +99,7 @@ TEST(SystemTimerTest, SetClockSource_ReplacesExisting)
 }
 
 // ===========================================================================
-// Units convenience getters
+// Convenience getters
 // ===========================================================================
 
 TEST(SystemTimerTest, Microseconds_ConvertsCorrectly)
@@ -108,7 +108,7 @@ TEST(SystemTimerTest, Microseconds_ConvertsCorrectly)
     SystemTimer timer(fakeClockDynamic); // epoch = 0
     s_fakeTime = 1000000;                // 1,000,000 µs elapsed
     auto us    = timer.microseconds();
-    EXPECT_DOUBLE_EQ(us.value(), 1000000.0);
+    EXPECT_DOUBLE_EQ(us, 1000000.0);
 }
 
 TEST(SystemTimerTest, Milliseconds_ConvertsCorrectly)
@@ -117,7 +117,7 @@ TEST(SystemTimerTest, Milliseconds_ConvertsCorrectly)
     SystemTimer timer(fakeClockDynamic); // epoch = 0
     s_fakeTime = 1000000;                // 1,000,000 µs = 1000 ms
     auto ms    = timer.milliseconds();
-    EXPECT_DOUBLE_EQ(ms.value(), 1000.0);
+    EXPECT_DOUBLE_EQ(ms, 1000.0);
 }
 
 TEST(SystemTimerTest, Seconds_ConvertsCorrectly)
@@ -126,7 +126,7 @@ TEST(SystemTimerTest, Seconds_ConvertsCorrectly)
     SystemTimer timer(fakeClockDynamic); // epoch = 0
     s_fakeTime = 1000000;                // 1,000,000 µs = 1.0 s
     auto s     = timer.seconds();
-    EXPECT_DOUBLE_EQ(s.value(), 1.0);
+    EXPECT_DOUBLE_EQ(s, 1.0);
 }
 
 // ===========================================================================
@@ -136,19 +136,19 @@ TEST(SystemTimerTest, Seconds_ConvertsCorrectly)
 TEST(SystemTimerTest, StaticToMicroseconds)
 {
     auto us = SystemTimer::toMicroseconds(5000);
-    EXPECT_DOUBLE_EQ(us.value(), 5000.0);
+    EXPECT_DOUBLE_EQ(us, 5000.0);
 }
 
 TEST(SystemTimerTest, StaticToMilliseconds)
 {
     auto ms = SystemTimer::toMilliseconds(2500000);
-    EXPECT_DOUBLE_EQ(ms.value(), 2500.0);
+    EXPECT_DOUBLE_EQ(ms, 2500.0);
 }
 
 TEST(SystemTimerTest, StaticToSeconds)
 {
     auto s = SystemTimer::toSeconds(3000000);
-    EXPECT_DOUBLE_EQ(s.value(), 3.0);
+    EXPECT_DOUBLE_EQ(s, 3.0);
 }
 
 // ===========================================================================

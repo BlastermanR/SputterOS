@@ -16,7 +16,7 @@ The HAL folder is organized into two tiers:
 
 | Device | Key Methods | Notes |
 |--------|-------------|-------|
-| `IStreamReader.h` | `available()`, `read()`, `write()`, `isConnected()` | Byte-stream transport (USB/UART). Does not inherit `ISputterDevice`. |
+| `IStream.h` | `available()`, `read()`, `write()`, `isConnected()` | Byte-stream transport (USB/UART). Does not inherit `ISputterDevice`. |
 
 ---
 

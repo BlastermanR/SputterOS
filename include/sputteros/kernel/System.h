@@ -64,7 +64,8 @@
 #include "sputteros/utils/logging/ErrorLogger.h"
 #include "sputteros/utils/logging/TelemetryLogger.h"
 
-#include <cassert>
+#include "sputteros/utils/PlatformAssert.h"
+
 #include <chrono>
 #include <cstddef>
 #include <optional>
@@ -222,7 +223,7 @@ template <typename Cfg> class System
      */
     static void init(std::size_t coreId)
     {
-        assert(s_built && "Call SystemBuilder::build() before System::init()");
+        SPUTTEROS_ASSERT(s_built && "Call SystemBuilder::build() before System::init()");
         if (coreId >= kCoreCount)
             return;
 
@@ -279,7 +280,7 @@ template <typename Cfg> class System
      */
     static void tick(std::size_t coreId, SputterMicros systemTimeMicros)
     {
-        assert(s_built && "Call SystemBuilder::build() before System::tick()");
+        SPUTTEROS_ASSERT(s_built && "Call SystemBuilder::build() before System::tick()");
         if (coreId >= kCoreCount)
             return;
 
@@ -381,7 +382,7 @@ template <typename Cfg> class System
      */
     static void run(std::size_t coreId)
     {
-        assert(s_built && "Call SystemBuilder::build() before System::run()");
+        SPUTTEROS_ASSERT(s_built && "Call SystemBuilder::build() before System::run()");
         if (coreId >= kCoreCount)
             return;
 
@@ -458,8 +459,9 @@ template <typename Cfg> class System
     /**
      * @brief Access the kernel-owned system timer.
      *
-     * Wraps the injected `MicrosecondSource` with nholthaus/units
-     * convenience getters. Set the clock source via
+     * Wraps the injected `MicrosecondSource` with convenience
+     * getters returning `double` in standard time units.
+     * Set the clock source via
      * `SystemBuilder::setClockSource()` before calling `build()`.
      *
      * @return Reference to the `SystemTimer`.
@@ -500,7 +502,7 @@ template <typename Cfg> class System
      */
     static Kernel::CoreUtilizationTracker &coreUtilization(std::size_t coreId)
     {
-        assert(coreId < kCoreCount);
+        SPUTTEROS_ASSERT(coreId < kCoreCount);
         return s_utilTracker[coreId];
     }
 

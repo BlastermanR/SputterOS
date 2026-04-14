@@ -274,12 +274,12 @@ class TaskTimer
             if (static_cast<float>(cumulative) >= targetRank)
             {
                 // Linear interpolation within this bucket
-                uint32_t      prevCumulative = cumulative - hist[i];
-                float         fraction       = (hist[i] > 0)
-                                                   ? (targetRank - static_cast<float>(prevCumulative)) / static_cast<float>(hist[i])
-                                                   : 0.0f;
-                SputterMicros bucketLow      = i * kHistogramBucketWidthUs;
-                SputterMicros bucketHigh     = (i < kHistogramBuckets - 1) ? (i + 1) * kHistogramBucketWidthUs : maxDur;
+                uint32_t prevCumulative = cumulative - hist[i];
+                float fraction = (hist[i] > 0)
+                                     ? (targetRank - static_cast<float>(prevCumulative)) / static_cast<float>(hist[i])
+                                     : 0.0f;
+                SputterMicros bucketLow  = i * kHistogramBucketWidthUs;
+                SputterMicros bucketHigh = (i < kHistogramBuckets - 1) ? (i + 1) * kHistogramBucketWidthUs : maxDur;
                 if (bucketHigh < bucketLow)
                 {
                     bucketHigh = bucketLow;
@@ -353,7 +353,7 @@ class TaskTimer
     MicrosecondSource m_clockSource{nullptr}; /**< @brief Injected platform clock. */
     SputterMicros     m_lastDuration{0};      /**< @brief Duration of the last tick (µs). */
     SputterMicros     m_minDuration{          /**< @brief Minimum duration since last reset (µs). */
-                                std::numeric_limits<SputterMicros>::max()};
+                                    std::numeric_limits<SputterMicros>::max()};
     SputterMicros     m_maxDuration{0};                 /**< @brief Peak duration since last reset (µs). */
     SputterMicros     m_start{0};                       /**< @brief Start timestamp of the current tick (µs). */
     uint64_t          m_sumDurationUs{0};               /**< @brief Accumulated sum for average calculation (µs). */

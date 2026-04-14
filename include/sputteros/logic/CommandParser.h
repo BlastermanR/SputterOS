@@ -1,7 +1,6 @@
 #ifndef SPUTTEROS_LOGIC_COMMANDPARSER_H
 #define SPUTTEROS_LOGIC_COMMANDPARSER_H
 
-#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -126,14 +125,14 @@ template <typename Cfg> class CommandParser
         char *end    = nullptr;
 
         long rawId = std::strtol(cursor, &end, 10);
-        if (end == cursor || !std::isspace(static_cast<unsigned char>(*end)))
+        if (end == cursor || (*end != ' ' && *end != '\t'))
         {
             return false;
         }
         cursor = end;
 
         long rawDevice = std::strtol(cursor, &end, 10);
-        if (end == cursor || !std::isspace(static_cast<unsigned char>(*end)))
+        if (end == cursor || (*end != ' ' && *end != '\t'))
         {
             return false;
         }

@@ -62,7 +62,6 @@
 #include "sputteros/osal/tasks/IScheduledTask.h"
 #include "sputteros/osal/tasks/ITask.h"
 
-#include <cassert>
 #include <cstddef>
 
 namespace SputterOS

@@ -24,7 +24,6 @@ This repository contains the reusable SputterOS C++17 library, its host-native t
 ```bash
 git clone <your-fork-or-repo-url>
 cd SputterOS
-git submodule update --init --recursive
 ```
 
 ## Build and Test: SputterOS

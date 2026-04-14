@@ -1,22 +1,18 @@
-# Makefile for SputteringOS Project (Raspberry Pi Pico 2)
+# Makefile for SputterOS
 #
-# make format
-#     Recursively runs clang-format -i on all .cpp, .h, and .pio files across 
-#     your workspace while ignoring the build folder entirely. 
+# Requires: cmake, ninja, g++ or clang, clang-format, clang-tidy, doxygen, graphviz
+# See DEPENDENCIES.md for full install instructions.
 
 
 # --- Project Paths ---
 BUILD_DIR ?= build
 TEST_BUILD_DIR ?= tests/build
 TEST_COV_BUILD_DIR ?= tests/build_coverage
-PICO_SDK_ROOT ?= /c/Users/ryanb/.pico-sdk
-PICOTOOL ?= $(PICO_SDK_ROOT)/picotool/2.2.0-a4/picotool/picotool.exe
-OPENOCD ?= $(PICO_SDK_ROOT)/openocd/0.12.0+dev/openocd.exe
-OPENOCD_SCRIPTS ?= $(PICO_SDK_ROOT)/openocd/0.12.0+dev/scripts
-CMAKE ?= $(PICO_SDK_ROOT)/cmake/v3.31.5/bin/cmake.exe
-CTEST ?= $(PICO_SDK_ROOT)/cmake/v3.31.5/bin/ctest.exe
-NINJA ?= $(PICO_SDK_ROOT)/ninja/v1.12.1/ninja.exe
-BIN_TARGET = SputteringACS.elf
+CMAKE ?= cmake
+CTEST ?= ctest
+NINJA ?= ninja
+DOXYGEN ?= doxygen
+CLANG_TIDY ?= clang-tidy
 
 # ────────────────────────────────────────────────────────────────────────────
 # LIBRARYONLY BUILD (for use as a submodule in parent projects)
@@ -54,6 +50,13 @@ help:
 	@echo ""
 	@echo "  Code Coverage:"
 	@echo "    make coverage         Build all tests with Clang coverage, generate reports (llvm-cov)"
+	@echo ""
+	@echo "  Static Analysis:"
+	@echo "    make tidy             Run clang-tidy on library sources"
+	@echo ""
+	@echo "  Documentation:"
+	@echo "    make docs             Generate Doxygen API docs (HTML + graphs)"
+	@echo "    make cleanDocs        Remove generated documentation"
 	@echo ""
 	@echo "  Utilities:"
 	@echo "    make format           Format all source files (clang-format)"
@@ -225,6 +228,46 @@ coverage:
 # UTILITIES
 # ────────────────────────────────────────────────────────────────────────────
 
+# ────────────────────────────────────────────────────────────────────────────
+# STATIC ANALYSIS (clang-tidy)
+# ────────────────────────────────────────────────────────────────────────────
+# Runs clang-tidy on all library sources against the unified test build's
+# compile_commands.json. Requires a prior test build (auto-triggered).
+
+.PHONY: tidy
+tidy: _testBuild
+	@echo "Running clang-tidy on SputterOS library sources..."
+	@find include/sputteros -type f -name '*.h' | sort | xargs -I{} \
+		$(CLANG_TIDY) -p $(TEST_BUILD_DIR) {} -- -std=c++17 \
+		-I$(abspath include) 2>&1 | tee $(TEST_BUILD_DIR)/clang-tidy-report.txt
+	@find src -type f -name '*.cpp' | sort | xargs -I{} \
+		$(CLANG_TIDY) -p $(TEST_BUILD_DIR) {} -- -std=c++17 \
+		-I$(abspath include) 2>&1 | tee -a $(TEST_BUILD_DIR)/clang-tidy-report.txt
+	@echo ""
+	@echo "clang-tidy report: $(TEST_BUILD_DIR)/clang-tidy-report.txt"
+	@echo "clang-tidy complete."
+
+# ────────────────────────────────────────────────────────────────────────────
+# DOCUMENTATION (Doxygen + Graphviz)
+# ────────────────────────────────────────────────────────────────────────────
+
+.PHONY: docs
+docs:
+	@echo "Generating SputterOS API documentation..."
+	@$(DOXYGEN) Doxyfile
+	@echo ""
+	@echo "Documentation generated: docs/api/html/index.html"
+
+.PHONY: cleanDocs
+cleanDocs:
+	@echo "Removing generated documentation..."
+	@rm -rf docs/api
+	@echo "Documentation removed."
+
+# ────────────────────────────────────────────────────────────────────────────
+# UTILITIES
+# ────────────────────────────────────────────────────────────────────────────
+
 # Format: Runs clang-format on all relevant sources
 .PHONY: format
 format:
@@ -240,4 +283,5 @@ clean:
 	@rm -rf $(TEST_BUILD_DIR)
 	@rm -rf $(TEST_COV_BUILD_DIR)
 	@rm -rf exampleProjects/build
+	@rm -rf docs/api
 	@echo "Clean complete."
