@@ -45,6 +45,7 @@
 
 #include "sputteros/ConfigTraits.h"
 #include "sputteros/kernel/CoreDispatchMode.h"
+#include "sputteros/kernel/CrunchDispatcher.h"
 #include "sputteros/kernel/KernelState.h"
 #include "sputteros/kernel/metrics/CoreUtilizationTracker.h"
 #include "sputteros/kernel/metrics/SchedulerHealthMetrics.h"
@@ -401,12 +402,9 @@ template <typename Cfg> class System
 
         if (core.mode == Kernel::CoreDispatchMode::CRUNCH && core.crunchTask)
         {
-            // CRUNCH mode: tight loop delegated to CrunchDispatcher (WP-3).
-            // Stub: run crunch iterations until stop condition fires.
-            while (isActiveState(s_kernelState) && !anyStopConditionFired())
-            {
-                core.crunchTask->crunch(s_timer.nowMicros());
-            }
+            // CRUNCH mode: tight loop with watchdog, overrun, and abort.
+            s_crunchDispatcher.configure(core.crunchTask, s_watchdogKickFn);
+            s_crunchDispatcher.runLoop(coreId);
         }
         else
         {
@@ -640,8 +638,45 @@ template <typename Cfg> class System
         return (coreId < kCoreCount) ? s_cores[coreId].task(taskIdx) : nullptr;
     }
 
+    // =====================================================================
+    // Safety Abort Bridge
+    // =====================================================================
+
+    /**
+     * @brief Signal a safety abort from ControlTask to all cores.
+     *
+     * Called by `ScheduledControlTask::evaluateSafety()` when any
+     * `ISafetyMonitor::isSafe()` returns false. The flag is checked
+     * by `CrunchDispatcher` every iteration via `isSafetyAborted()`.
+     *
+     * Uses `memory_order_release` to ensure all preceding writes
+     * (e.g. fault log entries) are visible to the reading core.
+     */
+    static void signalSafetyAbort() { s_safetyAbort.store(true, std::memory_order_release); }
+
+    /**
+     * @brief Check whether a safety abort has been signalled.
+     *
+     * Called by `CrunchDispatcher` every iteration. Uses
+     * `memory_order_acquire` to synchronise with the producer's
+     * `memory_order_release` store in `signalSafetyAbort()`.
+     *
+     * @return true if the abort flag is set.
+     */
+    static bool isSafetyAborted() { return s_safetyAbort.load(std::memory_order_acquire); }
+
+    /**
+     * @brief Clear the safety abort flag.
+     *
+     * Called during recovery or reset. Uses `memory_order_relaxed`
+     * because clearing is only done when no concurrent reader is
+     * expected (post-shutdown or test teardown).
+     */
+    static void clearSafetyAbort() { s_safetyAbort.store(false, std::memory_order_relaxed); }
+
   private:
     friend class SystemBuilder<Cfg>;
+    friend class Kernel::CrunchDispatcher<Cfg>;
     friend struct Kernel::KernelTestAccess;
 
     // =====================================================================
@@ -698,6 +733,8 @@ template <typename Cfg> class System
         s_drainCtx = nullptr;
         for (auto &init : s_coreInitialized)
             init = false;
+        s_safetyAbort.store(false, std::memory_order_relaxed);
+        s_watchdogKickFn = nullptr;
     }
 
     // =====================================================================
@@ -747,6 +784,12 @@ template <typename Cfg> class System
     inline static Kernel::SchedulerHealthMetrics     s_schedulerHealth{};
 
     // =====================================================================
+    // CrunchDispatcher (CRUNCH-mode cores)
+    // =====================================================================
+
+    inline static Kernel::CrunchDispatcher<Cfg> s_crunchDispatcher{};
+
+    // =====================================================================
     // Kernel Tasks (emplaced by SystemBuilder::build())
     // =====================================================================
 
@@ -778,6 +821,7 @@ template <typename Cfg> class System
     inline static bool                s_built{false};
     inline static SputterMicros       s_lastTime[kCoreCount]{};
     inline static Kernel::KernelState s_kernelState{Kernel::KernelState::UNCONFIGURED};
+    inline static std::atomic<bool>   s_safetyAbort{false};
 
     // =====================================================================
     // Run API State
@@ -788,6 +832,10 @@ template <typename Cfg> class System
     inline static TelemetryLogger::DrainWriteFn s_drainFn{nullptr};
     inline static void                         *s_drainCtx{nullptr};
     inline static bool                          s_coreInitialized[kCoreCount]{};
+
+    /** @brief Platform watchdog kick stored during build for CrunchDispatcher. */
+    using WatchdogKickFn = void (*)();
+    inline static WatchdogKickFn s_watchdogKickFn{nullptr};
 
     // =====================================================================
     // Kernel State Machine

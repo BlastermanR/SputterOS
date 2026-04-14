@@ -14,11 +14,12 @@ How to distribute SputterOS across multiple CPU cores while preserving safety gu
 6. [Watchdog Health Monitoring](#watchdog-health-monitoring)
 7. [Inter-Core Command Queue](#inter-core-command-queue)
 8. [AtomicDoubleBuffer — Latest-Value Sharing](#atomicdoublebuffer--latest-value-sharing)
-9. [Memory Ordering](#memory-ordering)
-10. [ISR Registration Across Cores](#isr-registration-across-cores)
-11. [Performance Characteristics](#performance-characteristics)
-12. [Single-Core Fallback](#single-core-fallback)
-13. [Testing Multi-Core Code](#testing-multi-core-code)
+9. [Safety Abort Bridge](#safety-abort-bridge)
+10. [Memory Ordering](#memory-ordering)
+11. [ISR Registration Across Cores](#isr-registration-across-cores)
+12. [Performance Characteristics](#performance-characteristics)
+13. [Single-Core Fallback](#single-core-fallback)
+14. [Testing Multi-Core Code](#testing-multi-core-code)
 
 ---
 
@@ -373,6 +374,8 @@ When `try_push()` returns `false`, `CommsTask` sends a `NACK` response to the op
 
 ---
 
+---
+
 ## Memory Ordering
 
 ### Golden Rule
@@ -463,6 +466,43 @@ AtomicDoubleBuffer<SensorState, STM32CachePolicy> g_sensorState;
 ```
 
 The default `NoCachePolicy` compiles to zero overhead on cache-coherent hosts and most Cortex-M platforms.
+
+---
+
+## Safety Abort Bridge
+
+When the CRUNCH core is running a tight loop with no Phase 1 safety evaluation, the kernel needs a lock-free mechanism to propagate a safety abort from Core 0's `ControlTask` to Core 1's `CrunchDispatcher`.
+
+### Signal Path
+
+```
+Core 0 (ControlTask::evaluateSafety)    Core 1 (CrunchDispatcher::runLoop)
+────────────────────────────────────    ─────────────────────────────────
+ISafetyMonitor::isSafe() == false
+IUserApplication::forceSafeAbort()
+System<Cfg>::signalSafetyAbort()  ──→  (atomic release store)
+                                        ...
+                                        isSafetyAborted() → true  (acquire load)
+                                        m_task->onCrunchAbort()
+                                        log(SOFT_ABORT)
+                                        return from runLoop()
+```
+
+### Implementation
+
+`System<Cfg>` holds a single `inline static std::atomic<bool> s_safetyAbort{false}`. The write uses `memory_order_release` and the read uses `memory_order_acquire`, establishing a happens-before edge: all writes made by `ControlTask` before the signal are visible to `CrunchDispatcher` after the acquire load.
+
+| API | Semantics |
+|-----|-----------|
+| `System<Cfg>::signalSafetyAbort()` | Release store `true` — called by `ControlTask` on safety failure |
+| `System<Cfg>::isSafetyAborted()` | Acquire load — polled by `CrunchDispatcher` before every `crunch()` call |
+| `System<Cfg>::clearSafetyAbort()` | Relaxed store `false` — cleared by `System::reset()` or explicitly by tests |
+
+### Abort Latency
+
+At most **one** additional `crunch()` call executes after the signal is posted — the call in-flight when Core 1 last checked the flag. The next iteration's pre-loop acquire load detects the flag and exits. Bounded abort latency is therefore `maxIterationUs()` in the worst case.
+
+`CrunchDispatcher` also performs a **pre-loop check** before entering the dispatch loop, handling the case where the abort is signalled between `System::build()` and the first `crunch()` call (e.g., a safety failure during the startup barrier).
 
 ---
 

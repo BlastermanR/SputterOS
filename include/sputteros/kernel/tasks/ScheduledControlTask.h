@@ -35,6 +35,7 @@
 namespace SputterOS
 {
 
+template <typename Cfg> class System;
 template <typename Cfg> class SystemBuilder;
 
 namespace Kernel
@@ -162,6 +163,7 @@ template <typename Cfg> class ScheduledControlTask : public IScheduledTask
                 {
                     m_app->forceSafeAbort();
                 }
+                System<Cfg>::signalSafetyAbort();
                 return false;
             }
         }

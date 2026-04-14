@@ -465,6 +465,7 @@ template <typename Cfg> class SystemBuilder
             S::s_commsTask->setMetricsSnapshotFn(&S::snapshot);
             S::s_diagsTask.emplace(Kernel::KernelConstructTag{}, S::s_errorLogger, S::s_memProfiler, m_watchdogKick,
                                    CfgControlBudgetUs<Cfg>::value);
+            S::s_watchdogKickFn = m_watchdogKick;
 
             // Auto-register kernel scheduled tasks on correct cores.
             // Prepend in reverse order so the final tick order is:
