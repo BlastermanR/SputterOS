@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 
-project(SputterOS VERSION 0.2.0 LANGUAGES CXX)
+project(SputterOS VERSION 0.5.0 LANGUAGES CXX)
 
 # ── Initialize Git Submodules ────────────────────────────────────────────────
 # Ensure all submodules are initialized and updated before building

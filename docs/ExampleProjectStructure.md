@@ -55,8 +55,8 @@ UserProject/
         │   │   ├── tasks/            # Task abstraction layer
         │   │   │   ├── ITask.h        # Base task with device dependency tracking
         │   │       ├── IScheduledTask.h # Periodic deadline-scheduled task interface
-        │   │       ├── IBackgroundTask.h # Best-effort background task interface        │       ├── ICrunchTask.h    # Exclusive-core blocking-tolerant tight-loop interface        │   │       ├── ICriticalTask.h # Compatibility shim for IScheduledTask
-        │   │       └── IAsyncTask.h   # Compatibility shim for IScheduledTask
+        │   │       ├── IBackgroundTask.h # Best-effort background task interface
+        │   │       └── ICrunchTask.h    # Exclusive-core blocking-tolerant tight-loop interface
         │   │   │
         │   │   └── sync/             # Synchronization & queuing primitives
         │   │       ├── IMessageQueue.h    # Template: IMessageQueue<Cfg>
@@ -76,17 +76,24 @@ UserProject/
         │   │   └── README.md
         │   │
         │   ├── kernel/               # Microkernel (constructed via KernelConstructTag PassKey)
-        │   │   ├── ScheduledCommsTask.h  # Template: ScheduledCommsTask<Cfg> (IScheduledTask)
-        │   │   ├── ScheduledControlTask.h # Template: ScheduledControlTask<Cfg> (IScheduledTask)
-        │   │   ├── BackgroundDiagnosticsTask.h # IBackgroundTask
-        │   │   ├── DeadlineTracker.h  # Periodic deadline tracker for the Cruncher
+        │   │   ├── CoreDispatchMode.h # FLAT_LOOP vs CRUNCH dispatch strategy enum
+        │   │   ├── CrunchDispatcher.h # Exclusive-core tight-loop runner for ICrunchTask
+        │   │   ├── KernelConstructTag.h # PassKey idiom — gates kernel task construction
         │   │   ├── KernelState.h      # Kernel lifecycle state machine
+        │   │   ├── System.h          # System<Cfg> singleton — owns all runtime infrastructure
         │   │   ├── interfaces/
         │   │   │   ├── IUserApplication.h # User-space application interface
         │   │   │   └── ISafetyMonitor.h    # Generic failsafe interface
-        │   │   ├── KernelConstructTag.h # PassKey idiom — gates kernel task construction
-        │   │   ├── System.h          # System<Cfg> singleton — owns all runtime infrastructure
-        │   │   └── TaskTimer.h       # Per-task execution timer
+        │   │   ├── metrics/
+        │   │   │   ├── CoreUtilizationTracker.h # Per-core utilization tracking
+        │   │   │   ├── DeadlineTracker.h  # Periodic deadline tracker
+        │   │   │   ├── SchedulerHealthMetrics.h # Scheduler-level health metrics
+        │   │   │   └── TaskTimer.h        # Per-task execution timer
+        │   │   └── tasks/
+        │   │       ├── BackgroundDiagnosticsTask.h # IBackgroundTask
+        │   │       ├── ScheduledCommsTask.h  # Template: ScheduledCommsTask<Cfg> (IScheduledTask)
+        │   │       ├── ScheduledControlTask.h # Template: ScheduledControlTask<Cfg> (IScheduledTask)
+        │   │       └── TaskState.h    # Task lifecycle state enum
         │   │
         │   ├── builder/              # System construction
         │   │   └── SystemBuilder.h    # Template: declarative wiring → System<Cfg>
@@ -105,8 +112,13 @@ UserProject/
         │   │
         │   ├── utils/                # Standardized Tools (supplied + mocks for testing)
         │   │   ├── MemoryProfiler.h     # Heap/stack high-water mark tracker
+        │   │   ├── MinMax.h             # sput_min/sput_max (no <algorithm> dependency)
         │   │   ├── NonBlockingStopwatch.h # Non-blocking monotonic timer utility
+        │   │   ├── PerformanceFormatter.h # Human-readable performance report formatter
+        │   │   ├── PerformanceSnapshot.h  # Rolling-window performance data capture
         │   │   ├── PIDController.h       # Discrete PID controller
+        │   │   ├── PlatformAssert.h     # SPUTTEROS_ASSERT macro (no <cassert> dependency)
+        │   │   ├── QueueDepthMonitor.h  # Lock-free queue depth tracking
         │   │   │
         │   │   ├── logging/           # Logging & diagnostic utilities
         │   │   │   ├── ErrorLogger.h        # ISR-safe circular fault log
@@ -213,7 +225,7 @@ int main() {
     std::array<SputterOS::ISafetyMonitor*, 1> monitors = {&interlockMon};
 
     // 3. Build: SystemBuilder creates ControlTask, CommsTask, DiagnosticsTask internally
-    //    and auto-assigns them to cores (ICriticalTask → Core 0, IAsyncTask → Core 1)
+    //    and auto-assigns them to cores (ScheduledControlTask → Core 0, ScheduledCommsTask → Core 1)
     SputterOS::SystemBuilder<MyConfig> builder(&app, monitors.data(), monitors.size());
     builder.setStream(&usbStream);
     builder.setWatchdogKick([]() { /* kick hardware watchdog */ });
@@ -317,6 +329,21 @@ int main() {
 ```
 
 Replace each `Dummy*` stub with your real driver as it's ready - no other code changes needed.
+
+## CrunchTask Example (crunchloop)
+
+The `exampleProjects/crunchloop/` project demonstrates dual-core `ICrunchTask` usage with `AtomicDoubleBuffer` for cross-core data sharing. This is the reference pattern for sub-ms servo loops (e.g., MicroManipulator at 6 kHz):
+
+- Core 0: `FLAT_LOOP` — runs `ScheduledControlTask` with the motion-planner app
+- Core 1: `CRUNCH` — runs `SimulatedServoTask` (an `ICrunchTask`) in a tight loop
+
+Key files:
+- `config/CrunchLoopConfig.h` — `kCoreCount = 2`, `kCrunchMaxOverruns` tuning
+- `src/SimulatedServoTask.cpp` — `crunch()` reads targets via `AtomicDoubleBuffer`, writes encoder state back
+- `src/CrunchLoopApp.cpp` — motion planner writes targets from Core 0
+- `src/main_osNative.cpp` — `SystemBuilder` wiring with `builder.core(1).setCrunchTask(&servo)`
+
+Build and run with `make exampleProjects` or `ctest` in the example build directory.
 
 ## Next Steps
 

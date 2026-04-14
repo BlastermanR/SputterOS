@@ -10,7 +10,7 @@
  */
 
 #include "sputteros/utils/PIDController.h"
-#include <algorithm>
+#include "sputteros/utils/MinMax.h"
 
 namespace SputterOS
 {
@@ -57,7 +57,7 @@ float PIDController::compute(float setpoint, float measured, SputterMicros times
     }
 
     const float output =
-        std::max(m_outputMin, std::min(m_outputMax, m_kp * error + m_ki * m_integral + m_kd * derivative));
+        sput_max(m_outputMin, sput_min(m_outputMax, m_kp * error + m_ki * m_integral + m_kd * derivative));
 
     m_prevError     = error;
     m_lastOutput    = output;

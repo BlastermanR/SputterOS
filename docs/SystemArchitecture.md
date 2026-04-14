@@ -286,7 +286,7 @@ Pure abstract C++ interfaces. All inherit `ISputterDevice` (non-copyable, protec
 
 The OSAL layer is organized into two subfolders:
 
-- **`tasks/`** — Task abstraction hierarchy (`ITask`, `ICriticalTask`, `IAsyncTask`)
+- **`tasks/`** — Task abstraction hierarchy (`ITask`, `IScheduledTask`, `IBackgroundTask`, `ICrunchTask`)
 - **`sync/`** — Synchronization and queuing primitives (`IMessageQueue`, `LockFreeQueue`, `AtomicDoubleBuffer`, `MultiCoreSync`, `WatchdogSync`, `IMutex`, etc.)
 - **Root** — Shared types (`SputterTime.h` — 64-bit µs time type and `SystemTimer` class)
 

@@ -580,7 +580,7 @@ struct MyConfig {
 Effects:
 - `SyncType` becomes `NoOpMultiCoreSync` — all barriers return `true` immediately
 - All three kernel tasks run on Core 0 in a single tick loop
-- `SystemBuilder::build()` skips core-affinity validation for `IAsyncTask`
+- `SystemBuilder::build()` skips core-affinity validation in single-core mode
 - `WatchdogSync<1>` still works with a single core heartbeat
 
 Single-core `main()` simplifies to:
