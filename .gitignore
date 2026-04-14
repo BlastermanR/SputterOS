@@ -7,6 +7,12 @@
 *.profdata
 coverage_report.txt
 
+# Generated documentation (Doxygen)
+docs/api/
+
+# Static analysis reports
+clang-tidy-report.txt
+
 # Generated test result files
 FormalTestResults.md
 FormalTestResults.txt

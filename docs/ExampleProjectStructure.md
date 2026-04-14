@@ -72,7 +72,7 @@ UserProject/
         │   │   ├── base/
         │   │   │   └── ISputterDevice.h
         │   │   ├── devices/
-        │   │   │   └── IStreamReader.h
+        │   │   │   └── IStream.h
         │   │   └── README.md
         │   │
         │   ├── kernel/               # Microkernel (constructed via KernelConstructTag PassKey)
@@ -260,7 +260,7 @@ No CMake include-path injection is needed. See [Step 2 in the Implementation Gui
 **`include/hal_impl/` + `src/hal_impl/`**
 - HAL (Hardware Abstraction Layer) implementations
 - Typical implementations per your hardware:
-  - USB stream for commands → `PioUsbStreamReader` implements `IStreamReader`
+  - USB stream for commands → `PioUsbStream` implements `IStream`
   - Domain-specific devices (pressure sensors, MFCs, PSU, etc.) → define your own interface in your project inheriting `ISputterDevice`
 **`include/config/` + `src/`**
 - `BoardConfig.h` - GPIO pin assignments, ADC channel mappings

@@ -64,12 +64,6 @@ class IStream
     IStream() = default;
 };
 
-/**
- * @brief Backward-compatibility alias.
- * @deprecated Use `IStream` directly. Will be removed in a future release.
- */
-using IStreamReader = IStream;
-
 } // namespace SputterOS
 
 #endif // SPUTTEROS_HAL_INTERFACES_ISTREAM_H

@@ -229,12 +229,12 @@ private:
 };
 ```
 
-### IStreamReader — ISR Recommended
+### IStream — ISR Recommended
 
 **Why:** UART/USB RX data arrives asynchronously. Queue received bytes in the ISR; let the polling method drain them.
 
 ```cpp
-class USBSerialImpl : public IStreamReader {
+class USBSerialImpl : public IStream {
 private:
     static constexpr size_t RX_BUFFER_SIZE = 256;
     std::atomic<size_t> m_rxHead = 0, m_rxTail = 0;

@@ -50,7 +50,7 @@ graph TB
     end
 
     subgraph "HAL Interfaces"
-        ISR["IStreamReader"]
+        ISR["IStream"]
     end
 
     MAIN -->|"constructs"| SB
@@ -233,7 +233,7 @@ Runs asynchronously. Supports two modes: TEXT (legacy ASCII) and FRAMED (COBS bi
 
 **TEXT mode** — Each `tick()`:
 
-1. `CLI<Cfg>::tick()` — drain up to 64 bytes from `IStreamReader`, feed each to `CommandParser<Cfg>`
+1. `CLI<Cfg>::tick()` — drain up to 64 bytes from `IStream`, feed each to `CommandParser<Cfg>`
 2. Complete commands → `ICommandProducer::try_push()`. Success → `ACK <cmdId>\n`. Queue full → `NACK <cmdId> <targetDevice> <value>\n`
 
 **FRAMED mode** — Each `tick()`:
@@ -246,7 +246,7 @@ Runs asynchronously. Supports two modes: TEXT (legacy ASCII) and FRAMED (COBS bi
 
 `ScheduledCommsTask<Cfg>` implements `IProtocolHandler<Cfg>` to handle all protocol callbacks.
 
-**Dependencies:** `IStreamReader*`, `ICommandProducer<Cfg>*`
+**Dependencies:** `IStream*`, `ICommandProducer<Cfg>*`
 
 ### `BackgroundDiagnosticsTask` — System Health Monitor (`IBackgroundTask`)
 
@@ -270,7 +270,7 @@ Pure abstract C++ interfaces. All inherit `ISputterDevice` (non-copyable, protec
 | Interface | Key Methods | Notes |
 |---|---|---|
 
-| `IStreamReader` | `available()`, `read()`, `write()`, `isConnected()` | Bidirectional byte stream. All non-blocking. Does not inherit `ISputterDevice`. |
+| `IStream` | `available()`, `read()`, `write()`, `isConnected()` | Bidirectional byte stream. All non-blocking. Does not inherit `ISputterDevice`. |
 
 ### Dummy Stubs (`tests/unit/mocks/`)
 
@@ -414,7 +414,7 @@ The utility layer is organized into two subfolders:
 | `CLI<Cfg>` | Stream + parser + string builder wrapper. `tick()` drains 64 bytes/call. |
 | `ErrorLogger` | ISR-safe 32-entry circular ring buffer. 8 error codes (including `TIMER_ROLLOVER`). `std::chrono::milliseconds` timestamps. |
 | `PIDController` | Discrete PID with anti-windup. `compute(setpoint, feedback, time)`. Call `reset()` on phase transitions. |
-| `TelemetryLogger` | Task-tagged, verbosity-filtered live output. 32-entry buffer, drains to `IStreamReader`. |
+| `TelemetryLogger` | Task-tagged, verbosity-filtered live output. 32-entry buffer, drains to `IStream`. |
 | `MemoryProfiler` | Heap/stack high-water mark tracking. Platform stubs return 0 — subclass for real hardware. |
 | `LightweightStringBuilder` | 128-byte fixed-capacity heap-free formatter. Chainable `append()`. |
 | `NonBlockingStopwatch` | Monotonic timer: `hasExpired(time, duration) → bool`. |
@@ -472,7 +472,7 @@ sequenceDiagram
 
     Main->>Sys: tick(1, now) [Core 1 — Phase 1]
     Sys->>CMT: timer.start() → tick(now) → timer.stop()
-    CMT->>CLI: tick() — drain bytes from IStreamReader
+    CMT->>CLI: tick() — drain bytes from IStream
     CLI->>Q: try_push(cmd)
     Q-->>CLI: success/full
     CLI-->>CMT: ACK or NACK
@@ -549,7 +549,7 @@ In single-core mode (`kCoreCount == 1`), all scheduled tasks run on Core 0 and t
 
 ## Data Flow Summary
 
-1. **Command reception**: The platform scheduler calls `CommsTask<Cfg>::tick(SputterMicros systemTimeMicros)` each cycle. `CLI<Cfg>` drains the `IStreamReader` byte stream, `CommandParser<Cfg>` assembles ASCII lines into `Cfg::Command` packets, and `CommsTask` pushes validated packets into the `LockFreeQueue<Cfg, N>` via `ICommandProducer::try_push()`. On success the host receives `ACK <cmdId>\n`; if the queue is full the host receives `NACK <cmd_id> <sub_id> <value>\n`.
+1. **Command reception**: The platform scheduler calls `CommsTask<Cfg>::tick(SputterMicros systemTimeMicros)` each cycle. `CLI<Cfg>` drains the `IStream` byte stream, `CommandParser<Cfg>` assembles ASCII lines into `Cfg::Command` packets, and `CommsTask` pushes validated packets into the `LockFreeQueue<Cfg, N>` via `ICommandProducer::try_push()`. On success the host receives `ACK <cmdId>\n`; if the queue is full the host receives `NACK <cmd_id> <sub_id> <value>\n`.
 
 2. **Safety evaluation**: `ControlTask<Cfg>::tick(SputterMicros systemTimeMicros)` calls `evaluateSafety()` first. It iterates all registered `ISafetyMonitor` instances and calls `isSafe()` on each. Any monitor returning `false` immediately calls `IUserApplication<Cfg>::forceSafeAbort()` and returns before the application ticks.
 
@@ -559,7 +559,7 @@ In single-core mode (`kCoreCount == 1`), all scheduled tasks run on Core 0 and t
 
 5. **Health monitoring**: `BackgroundDiagnosticsTask::tick(SputterMicros systemTimeMicros)` is dispatched by **Phase 2 of `System::tick()`** on the background core (Core 1 in dual-core, Core 0 in single-core). It kicks the hardware watchdog, scans all monitored per-task `TaskTimer` instances for budget violations, updates `MemoryProfiler` high-water marks, and periodically logs a memory snapshot to `ErrorLogger`. The first background task in the round-robin ring always dispatches unconditionally each tick, guaranteeing health monitoring runs even when Phase 1 saturates the budget.
 
-6. **Telemetry response**: Phase implementations or tasks format responses using `LightweightStringBuilder`, deposit them into `CLI<Cfg>`'s builder, and call `CLI<Cfg>::flush()` to write back through `IStreamReader`.
+6. **Telemetry response**: Phase implementations or tasks format responses using `LightweightStringBuilder`, deposit them into `CLI<Cfg>`'s builder, and call `CLI<Cfg>::flush()` to write back through `IStream`.
 
 ---
 

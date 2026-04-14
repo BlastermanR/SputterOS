@@ -212,6 +212,10 @@ See the [Implementation Guide](docs/ImplementationGuide.md) for the full walkthr
 No external runtime dependencies. GoogleTest is fetched automatically via
 CMake `FetchContent` for host-native testing.
 
+See [DEPENDENCIES.md](DEPENDENCIES.md) for the full list of development tools
+(compilers, static analysis, documentation generators) with install commands
+for Ubuntu, MSYS2, and macOS.
+
 ## Building and Testing
 
 ```bash
@@ -221,11 +225,14 @@ make formalTest     # Run full suite and regenerate FormalTestResults.md
 
 Individual targets:
 ```bash
-make libOnly       # LibraryOnly build (no tests)
-make unitTest       # Build + run GoogleTest suite
-make systemTest     # Build + run system-level integration tests
+make libOnly         # Library-only build (no tests)
+make unitTest        # Build + run GoogleTest suite
+make systemTest      # Build + run system-level integration tests
 make exampleProjects # Build + run standalone example executables
-make coverage       # Generate llvm-cov coverage report
+make coverage        # Generate llvm-cov coverage report
+make tidy            # Run clang-tidy static analysis
+make docs            # Generate Doxygen API documentation (HTML + graphs)
+make format          # Format all source files (clang-format)
 ```
 
 | Suite | Purpose | Count |
@@ -238,7 +245,7 @@ All tests run on your host PC — **no embedded hardware or RTOS required**.
 
 See [Testing Guide](docs/TestingGuide.md) and [Formal Test Results](FormalTestResults.md) for details.
 
-Pull requests are validated automatically in GitHub Actions with formatting, unit tests, system tests, example projects, and coverage generation.
+Pull requests are validated automatically in GitHub Actions with formatting, unit tests, system tests, example projects, coverage generation, clang-tidy static analysis, and Doxygen documentation builds.
 
 ## Project Status
 
