@@ -73,7 +73,6 @@ SputterOS **never touches hardware directly**. Every GPIO, UART handle, and OS p
 
 ```bash
 git submodule add <repo-url> lib/SputterOS
-git submodule update --init --recursive
 ```
 
 ### 1b. Wire CMake

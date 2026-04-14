@@ -120,7 +120,6 @@ The user provides:
 1. **Add SputterOS to your project**
    ```bash
    git submodule add <repo-url> lib/SputterOS
-   git submodule update --init --recursive
    ```
 
 2. **Define your `Cfg` struct** — states, command IDs, queue capacity:
@@ -210,13 +209,8 @@ See the [Implementation Guide](docs/ImplementationGuide.md) for the full walkthr
 
 ## Dependencies
 
-- **[nholthaus/units](https://github.com/nholthaus/units)** — header-only C++14 type-safe physical units (torr, sccm, watts). Configured with `DISABLE_IOSTREAM=ON` and `DISABLE_PREDEFINED_UNITS=ON` for embedded use.
-
-```bash
-git clone --recurse-submodules <sputteros-repo-url>
-# or, if already cloned:
-git submodule update --init --recursive
-```
+No external runtime dependencies. GoogleTest is fetched automatically via
+CMake `FetchContent` for host-native testing.
 
 ## Building and Testing
 

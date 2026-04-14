@@ -212,10 +212,10 @@ Core 0 (FLAT_LOOP):                Core 1 (FLAT_LOOP):
   CBS: BackgroundServer ──┐          CBS: BackgroundServer ──┐
                           │                                  │
                           ▼                                  ▼
-                   ┌─────────────────────────────────────────────┐
-                   │  Shared background ring (atomic RR index)   │
+                   ┌──────────────────────────────────────────────┐
+                   │  Shared background ring (atomic RR index)    │
                    │  DiagnosticsTask  Logger  Monitor  Telemetry │
-                   └─────────────────────────────────────────────┘
+                   └──────────────────────────────────────────────┘
 ```
 
 | Property | Assessment |

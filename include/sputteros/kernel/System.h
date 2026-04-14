@@ -459,8 +459,9 @@ template <typename Cfg> class System
     /**
      * @brief Access the kernel-owned system timer.
      *
-     * Wraps the injected `MicrosecondSource` with nholthaus/units
-     * convenience getters. Set the clock source via
+     * Wraps the injected `MicrosecondSource` with convenience
+     * getters returning `double` in standard time units.
+     * Set the clock source via
      * `SystemBuilder::setClockSource()` before calling `build()`.
      *
      * @return Reference to the `SystemTimer`.
