@@ -36,7 +36,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake g++ make ninja-build
-          pip install clang-format==21.1.8
+          pip install clang-format==22.1.3
 
       - name: Run formatter
         run: make format
