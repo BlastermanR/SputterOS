@@ -229,12 +229,12 @@ private:
 };
 ```
 
-### IStreamReader — ISR Recommended
+### IStream — ISR Recommended
 
 **Why:** UART/USB RX data arrives asynchronously. Queue received bytes in the ISR; let the polling method drain them.
 
 ```cpp
-class USBSerialImpl : public IStreamReader {
+class USBSerialImpl : public IStream {
 private:
     static constexpr size_t RX_BUFFER_SIZE = 256;
     std::atomic<size_t> m_rxHead = 0, m_rxTail = 0;
@@ -462,6 +462,40 @@ SputterOS::System<TestConfig>::tick(0, SputterMicros(100));
 
 ---
 
+## Crunch Tasks and Blocking I/O
+
+`ICrunchTask` (registered via `CoreBuilder::setCrunchTask()`) is the **one sanctioned exception** to the polling-only rule. A crunch task runs on a dedicated core in a bare `while (active) crunch(now)` loop with no Phase 2 background dispatch and no cooperative scheduling.
+
+Because the crunch core is exclusive, bounded blocking I/O is permitted inside `crunch()`:
+
+```cpp
+class MyServoTask : public SputterOS::ICrunchTask {
+public:
+    SputterMicros crunchPeriodUs()  const override { return 500; }  // 2 kHz
+    SputterMicros maxIterationUs()  const override { return 400; }  // 400 µs bound
+
+    void crunch(SputterMicros /*now*/) override {
+        // Blocking SPI read is OK here — this core is dedicated.
+        uint16_t raw = m_spi.blockingRead(SPI_SENSOR_REG, /*timeoutUs=*/200);
+        m_pid.update(raw);
+        m_spi.blockingWrite(SPI_PWM_REG, m_pid.output());
+    }
+    // ...
+};
+```
+
+**Rules for crunch task blocking I/O:**
+
+| Rule | Reason |
+|------|--------|
+| Block only within `maxIterationUs()` | Overruns beyond this bound count toward `kCrunchMaxOverruns`; persistent overruns call `onCrunchAbort()` |
+| Do not share SPI/I2C buses with Core 0 without a mutex | Cross-core bus contention creates non-determinism in `ControlTask` |
+| Do not call `ControlTask` methods or push to the command queue from crunch | Same re-entrancy hazard as ISRs |
+
+Blocking I/O is still **forbidden** in `IScheduledTask::tick()` and `IBackgroundTask::tick()`. Only `ICrunchTask::crunch()` on its exclusive core has this permission.
+
+---
+
 ## Summary
 
 - **SputterOS control loop is polling-only and ISR-agnostic.**
@@ -469,6 +503,7 @@ SputterOS::System<TestConfig>::tick(0, SputterMicros(100));
 - **ISRs stay invisible to the rest of SputterOS.** They only update atomic state; all heavy lifting happens in the polling method.
 - **Use ISRs for:** Hardware fault/trip latching, UART/SPI RX byte queuing, high-speed encoder pulses.
 - **Use polling for:** Data processing, filtering, calculation, state transitions.
+- **Use `ICrunchTask` for:** Exclusive-core, blocking-tolerant tight loops (servo PWM, SPI sensor polling). Bounded blocking only.
 - **Memory ordering matters:** `acquire` on read, `release` on write.
 - **Keep ISRs fast:** < 1 us; no blocking calls.
 - **Simulate ISRs in unit tests** via mock setters since desktop tests have no real interrupts.

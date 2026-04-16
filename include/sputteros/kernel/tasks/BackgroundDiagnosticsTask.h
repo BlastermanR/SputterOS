@@ -58,9 +58,14 @@ class BackgroundDiagnosticsTask : public IBackgroundTask
 
     /**
      * @brief Maximum execution budget per dispatch in microseconds.
-     * @return Budget from the control cycle budget parameter.
+     *
+     * Returns a conservative budget for the diagnostics cycle itself.
+     * The `m_controlBudget` field is used internally for checking other
+     * tasks' budget violations, not as this task's own dispatch budget.
+     *
+     * @return 1000 µs (1 ms) — default IBackgroundTask budget.
      */
-    SputterMicros maxBudgetUs() const override { return m_controlBudget; }
+    SputterMicros maxBudgetUs() const override { return 1000; }
 
     /**
      * @brief Initialize diagnostic subsystems and record baseline memory usage.

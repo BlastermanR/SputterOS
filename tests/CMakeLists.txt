@@ -26,25 +26,14 @@
 
 cmake_minimum_required(VERSION 3.14)
 
-# ── Initialize Git Submodules ────────────────────────────────────────────────
-find_package(Git QUIET)
-if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../.git")
-    message(STATUS "Initializing and updating Git submodules...")
-    execute_process(
-        COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
-        RESULT_VARIABLE GIT_SUBMODULE_RESULT
-    )
-    if(NOT GIT_SUBMODULE_RESULT EQUAL 0)
-        message(WARNING "Failed to update submodules (exit code: ${GIT_SUBMODULE_RESULT})")
-    endif()
-endif()
-
 project(SputterOS_Tests LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Export compilation database for clang-tidy
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Threads REQUIRED)
 

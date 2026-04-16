@@ -47,7 +47,8 @@ class ErrorLogger
         SENSOR_ERROR     = 5, /**< @brief A HAL sensor reported an error. */
         WATCHDOG_KICK    = 6, /**< @brief Watchdog timer was kicked. */
         TIMER_ROLLOVER   = 7, /**< @brief System timer wrapped around. */
-        INVALID_STATE    = 8  /**< @brief Invalid kernel state transition attempted. */
+        INVALID_STATE    = 8, /**< @brief Invalid kernel state transition attempted. */
+        CRUNCH_OVERRUN   = 9  /**< @brief Crunch task iteration exceeded maxIterationUs(). */
     };
 
     /**

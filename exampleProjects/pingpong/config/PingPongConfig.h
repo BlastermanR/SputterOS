@@ -29,8 +29,8 @@ namespace PingPong
  *
  * Setting `kCoreCount = 2` activates the full multi-core path in
  * `SystemBuilder` and `System`:
- *  - `ControlTask` (ICriticalTask) is pinned to Core 0.
- *  - `CommsTask` + `DiagnosticsTask` (IAsyncTask) are pinned to Core 1.
+ *  - `ControlTask` (ScheduledControlTask) is pinned to Core 0.
+ *  - `CommsTask` + `DiagnosticsTask` (ScheduledCommsTask / BackgroundDiagnosticsTask) are pinned to Core 1.
  *  - `MultiCoreSync<2>` replaces `NoOpMultiCoreSync` for startup barriers.
  */
 struct PingPongConfig

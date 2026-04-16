@@ -153,18 +153,48 @@ class MyStream : public IStream
 //  STEP 4 (Optional): Implement Custom Tasks
 // =========================================================================
 
-// If you need additional periodic tasks beyond the built-in Control,
-// Comms, and Diagnostics tasks, implement IScheduledTask:
+// A: Additional PERIODIC tasks (IScheduledTask) — dispatched by Phase 1
+// on any FLAT_LOOP core alongside Control and Comms tasks.
 //
 // class MySensorTask : public IScheduledTask
 // {
 //   public:
-//     uint32_t periodUs() const override { return 50000; } // 20 Hz
+//     SputterMicros periodUs() const override { return 50000; } // 20 Hz
 //     void init() override { /* sensor setup */ }
 //     void tick(SputterMicros now) override { /* read sensor */ }
 // };
+// MySensorTask sensorTask;
+// builder.core(0).addScheduledTask(&sensorTask);
+
+// B: BACKGROUND tasks (IBackgroundTask) — dispatched by Phase 2 after
+// scheduled tasks, budget-capped to maxBudgetUs() per tick.
 //
-// Then register it in main():  builder.core(0).addScheduledTask(&sensorTask);
+// class MyLoggingTask : public IBackgroundTask
+// {
+//   public:
+//     SputterMicros maxBudgetUs() const override { return 500; }
+//     void init() override {}
+//     void tick(SputterMicros) override { /* drain log buffers */ }
+// };
+// MyLoggingTask loggingTask;
+// builder.addBackgroundTask(&loggingTask);
+
+// C: CRUNCH tasks (ICrunchTask, dual-core only) — exclusive tight loop
+// on a dedicated core. Permits bounded blocking I/O (SPI, I2C) within
+// maxIterationUs(). Requires kCoreCount >= 2; cannot be placed on Core 0.
+//
+// class MyServoTask : public ICrunchTask
+// {
+//   public:
+//     void          init() override { /* one-time setup */ }
+//     void          tick(SputterMicros) override {}
+//     void          crunch(SputterMicros now) override { /* tight loop body */ }
+//     SputterMicros crunchPeriodUs()  const override { return 163; }  // ~6 kHz
+//     SputterMicros maxIterationUs()  const override { return 200; }  // 200 µs WCET
+//     void          onCrunchAbort()   override { /* de-energise actuators */ }
+// };
+// MyServoTask servoTask;
+// builder.core(1).setCrunchTask(&servoTask);  // Core 1 becomes CRUNCH mode
 
 // =========================================================================
 //  STEP 5: Provide a Platform Clock
@@ -300,3 +330,55 @@ int main()
 //
 //     return 0;
 // }
+
+// =========================================================================
+//  CRUNCH-MODE DUAL-CORE TEMPLATE (for kCoreCount = 2 + ICrunchTask)
+// =========================================================================
+//
+// Use this pattern when Core 1 runs a tight real-time loop (e.g. servo
+// control, RF synthesis, motor commutation) instead of CommsTask.
+// CommsTask automatically falls back to Core 0.
+//
+// Requirements:
+//   - kCoreCount = 2
+//   - ICrunchTask implementation (see STEP 4C above)
+//   - kCrunchMaxOverruns in Cfg (optional; see MyProjectConfig.h)
+//
+// int main()
+// {
+//     MyApplication    app;
+//     MySafetyMonitor  safetyMonitor;
+//     MyStream         stream;
+//     MyServoTask      servoTask;
+//     std::array<ISafetyMonitor *, 1> monitors = {&safetyMonitor};
+//
+//     TimedMutexAdapter telemetryMutex;   // see DUAL-CORE TEMPLATE above
+//
+//     SystemBuilder<Cfg> builder(&app, monitors.data(), monitors.size());
+//     builder.setStream(&stream);
+//     builder.setClockSource(platformGetTimeMicros);
+//     builder.setWatchdogKick(nullptr);
+//     builder.setTelemetryDrain(telemetryWrite, &stream);
+//     builder.setTelemetryMutex(&telemetryMutex);
+//
+//     // Dedicate Core 1 to the crunch task. CommsTask auto-placed on Core 0.
+//     builder.core(1).setCrunchTask(&servoTask);
+//
+//     const BuildResult result = builder.build();
+//     if (!result) { return 1; }
+//
+//     // Core 1: tight crunch loop (blocks until abort/stop/overrun)
+//     std::thread core1([]() { System<Cfg>::run(1); });
+//     // Core 0: ControlTask + CommsTask (flat cooperative loop)
+//     System<Cfg>::run(0);
+//     core1.join();
+//
+//     return 0;
+// }
+//
+// Safety abort cross-core path:
+//   Core 0 ControlTask::evaluateSafety() failure
+//     => forceSafeAbort() + System<Cfg>::signalSafetyAbort()
+//       => CrunchDispatcher on Core 1 detects flag (acquire load)
+//         => servoTask.onCrunchAbort()  [de-energise actuators]
+//         => logs SOFT_ABORT, exits crunch loop

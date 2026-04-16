@@ -44,6 +44,8 @@
  */
 
 #include "sputteros/ConfigTraits.h"
+#include "sputteros/kernel/CoreDispatchMode.h"
+#include "sputteros/kernel/CrunchDispatcher.h"
 #include "sputteros/kernel/KernelState.h"
 #include "sputteros/kernel/metrics/CoreUtilizationTracker.h"
 #include "sputteros/kernel/metrics/SchedulerHealthMetrics.h"
@@ -54,6 +56,7 @@
 #include "sputteros/osal/sync/MultiCoreSync.h"
 #include "sputteros/osal/sync/WatchdogSync.h"
 #include "sputteros/osal/tasks/IBackgroundTask.h"
+#include "sputteros/osal/tasks/ICrunchTask.h"
 #include "sputteros/osal/tasks/ITask.h"
 #include "sputteros/utils/MemoryProfiler.h"
 #include "sputteros/utils/PerformanceSnapshot.h"
@@ -61,7 +64,8 @@
 #include "sputteros/utils/logging/ErrorLogger.h"
 #include "sputteros/utils/logging/TelemetryLogger.h"
 
-#include <cassert>
+#include "sputteros/utils/PlatformAssert.h"
+
 #include <chrono>
 #include <cstddef>
 #include <optional>
@@ -162,8 +166,14 @@ template <typename Cfg> class System
         ITask      *tasks[kMaxTasks] = {};
         std::size_t taskCount        = 0;
 
-        /** @brief Whether this core has any tasks. */
-        bool isActive() const { return taskCount > 0; }
+        /** @brief Dispatch strategy for this core (default: FLAT_LOOP). */
+        Kernel::CoreDispatchMode mode = Kernel::CoreDispatchMode::FLAT_LOOP;
+
+        /** @brief Exclusive crunch task for CRUNCH mode (nullptr in FLAT_LOOP). */
+        ICrunchTask *crunchTask = nullptr;
+
+        /** @brief Whether this core has any tasks (scheduled or crunch). */
+        bool isActive() const { return taskCount > 0 || crunchTask != nullptr; }
 
         /** @brief Get a task pointer by index. */
         ITask *task(std::size_t idx) const { return (idx < taskCount) ? tasks[idx] : nullptr; }
@@ -213,7 +223,7 @@ template <typename Cfg> class System
      */
     static void init(std::size_t coreId)
     {
-        assert(s_built && "Call SystemBuilder::build() before System::init()");
+        SPUTTEROS_ASSERT(s_built && "Call SystemBuilder::build() before System::init()");
         if (coreId >= kCoreCount)
             return;
 
@@ -227,6 +237,24 @@ template <typename Cfg> class System
             if (tsk)
             {
                 tsk->init();
+            }
+        }
+
+        // Initialize crunch task on CRUNCH-mode cores
+        if (s_cores[coreId].mode == Kernel::CoreDispatchMode::CRUNCH && s_cores[coreId].crunchTask)
+        {
+            s_cores[coreId].crunchTask->init();
+        }
+
+        // Initialize background tasks on the designated background core
+        if (coreId == s_backgroundCoreId)
+        {
+            for (std::size_t b = 0; b < s_backgroundTaskCount; ++b)
+            {
+                if (s_backgroundTasks[b])
+                {
+                    s_backgroundTasks[b]->init();
+                }
             }
         }
 
@@ -252,7 +280,7 @@ template <typename Cfg> class System
      */
     static void tick(std::size_t coreId, SputterMicros systemTimeMicros)
     {
-        assert(s_built && "Call SystemBuilder::build() before System::tick()");
+        SPUTTEROS_ASSERT(s_built && "Call SystemBuilder::build() before System::tick()");
         if (coreId >= kCoreCount)
             return;
 
@@ -266,6 +294,7 @@ template <typename Cfg> class System
 
         s_utilTracker[coreId].recordTickStart(systemTimeMicros);
 
+        // Phase 1: Scheduled tasks
         SputterMicros busyAccum = 0;
         for (std::size_t t = 0; t < s_cores[coreId].taskCount; ++t)
         {
@@ -277,6 +306,40 @@ template <typename Cfg> class System
                 tsk->timer().stop();
                 busyAccum += tsk->timer().lastDuration();
             }
+        }
+
+        // Phase 2: Background tasks — round-robin, budget-gated after first dispatch.
+        // At least one background task always dispatches per tick (the round-robin
+        // head) to ensure DiagnosticsTask can always monitor for budget violations.
+        // Additional tasks are budget-capped by the remaining gap time.
+        if (coreId == s_backgroundCoreId && s_backgroundTaskCount > 0)
+        {
+            SputterMicros gapBudget = CfgControlBudgetUs<Cfg>::value;
+            SputterMicros used      = busyAccum;
+
+            for (std::size_t i = 0; i < s_backgroundTaskCount; ++i)
+            {
+                IBackgroundTask *bg = s_backgroundTasks[s_bgRoundRobin];
+                s_bgRoundRobin      = (s_bgRoundRobin + 1) % s_backgroundTaskCount;
+
+                if (bg)
+                {
+                    // After the first dispatch, enforce budget cap
+                    if (i > 0)
+                    {
+                        SputterMicros taskBudget = bg->maxBudgetUs();
+                        if (used + taskBudget > gapBudget)
+                            break;
+                    }
+
+                    bg->timer().start();
+                    bg->tick(systemTimeMicros);
+                    bg->timer().stop();
+                    used += bg->timer().lastDuration();
+                }
+            }
+
+            busyAccum = used;
         }
 
         SputterMicros tickEndTime = s_timer.nowMicros();
@@ -319,7 +382,7 @@ template <typename Cfg> class System
      */
     static void run(std::size_t coreId)
     {
-        assert(s_built && "Call SystemBuilder::build() before System::run()");
+        SPUTTEROS_ASSERT(s_built && "Call SystemBuilder::build() before System::run()");
         if (coreId >= kCoreCount)
             return;
 
@@ -335,10 +398,22 @@ template <typename Cfg> class System
         // Phase 3: Wait for all cores to be ready
         s_sync.startupBarrier(coreId, std::chrono::milliseconds{2000});
 
-        // Phase 4: Busy-wait tick loop
-        while (isActiveState(s_kernelState) && !anyStopConditionFired())
+        // Phase 4: Dispatch based on core mode
+        auto &core = s_cores[coreId];
+
+        if (core.mode == Kernel::CoreDispatchMode::CRUNCH && core.crunchTask)
         {
-            tick(coreId, s_timer.nowMicros());
+            // CRUNCH mode: tight loop with watchdog, overrun, and abort.
+            s_crunchDispatcher.configure(core.crunchTask, s_watchdogKickFn);
+            s_crunchDispatcher.runLoop(coreId);
+        }
+        else
+        {
+            // FLAT_LOOP mode: existing tick-based dispatch
+            while (isActiveState(s_kernelState) && !anyStopConditionFired())
+            {
+                tick(coreId, s_timer.nowMicros());
+            }
         }
 
         // Phase 5: Kernel state shutdown (best-effort, first core wins)
@@ -384,8 +459,9 @@ template <typename Cfg> class System
     /**
      * @brief Access the kernel-owned system timer.
      *
-     * Wraps the injected `MicrosecondSource` with nholthaus/units
-     * convenience getters. Set the clock source via
+     * Wraps the injected `MicrosecondSource` with convenience
+     * getters returning `double` in standard time units.
+     * Set the clock source via
      * `SystemBuilder::setClockSource()` before calling `build()`.
      *
      * @return Reference to the `SystemTimer`.
@@ -426,7 +502,7 @@ template <typename Cfg> class System
      */
     static Kernel::CoreUtilizationTracker &coreUtilization(std::size_t coreId)
     {
-        assert(coreId < kCoreCount);
+        SPUTTEROS_ASSERT(coreId < kCoreCount);
         return s_utilTracker[coreId];
     }
 
@@ -564,8 +640,45 @@ template <typename Cfg> class System
         return (coreId < kCoreCount) ? s_cores[coreId].task(taskIdx) : nullptr;
     }
 
+    // =====================================================================
+    // Safety Abort Bridge
+    // =====================================================================
+
+    /**
+     * @brief Signal a safety abort from ControlTask to all cores.
+     *
+     * Called by `ScheduledControlTask::evaluateSafety()` when any
+     * `ISafetyMonitor::isSafe()` returns false. The flag is checked
+     * by `CrunchDispatcher` every iteration via `isSafetyAborted()`.
+     *
+     * Uses `memory_order_release` to ensure all preceding writes
+     * (e.g. fault log entries) are visible to the reading core.
+     */
+    static void signalSafetyAbort() { s_safetyAbort.store(true, std::memory_order_release); }
+
+    /**
+     * @brief Check whether a safety abort has been signalled.
+     *
+     * Called by `CrunchDispatcher` every iteration. Uses
+     * `memory_order_acquire` to synchronise with the producer's
+     * `memory_order_release` store in `signalSafetyAbort()`.
+     *
+     * @return true if the abort flag is set.
+     */
+    static bool isSafetyAborted() { return s_safetyAbort.load(std::memory_order_acquire); }
+
+    /**
+     * @brief Clear the safety abort flag.
+     *
+     * Called during recovery or reset. Uses `memory_order_relaxed`
+     * because clearing is only done when no concurrent reader is
+     * expected (post-shutdown or test teardown).
+     */
+    static void clearSafetyAbort() { s_safetyAbort.store(false, std::memory_order_relaxed); }
+
   private:
     friend class SystemBuilder<Cfg>;
+    friend class Kernel::CrunchDispatcher<Cfg>;
     friend struct Kernel::KernelTestAccess;
 
     // =====================================================================
@@ -588,6 +701,8 @@ template <typename Cfg> class System
         s_commandQueue.clear();
         s_allTaskCount        = 0;
         s_backgroundTaskCount = 0;
+        s_bgRoundRobin        = 0;
+        s_backgroundCoreId    = 0;
         for (auto &t : s_backgroundTasks)
             t = nullptr;
         for (std::size_t c = 0; c < kCoreCount; ++c)
@@ -620,6 +735,8 @@ template <typename Cfg> class System
         s_drainCtx = nullptr;
         for (auto &init : s_coreInitialized)
             init = false;
+        s_safetyAbort.store(false, std::memory_order_relaxed);
+        s_watchdogKickFn = nullptr;
     }
 
     // =====================================================================
@@ -669,6 +786,12 @@ template <typename Cfg> class System
     inline static Kernel::SchedulerHealthMetrics     s_schedulerHealth{};
 
     // =====================================================================
+    // CrunchDispatcher (CRUNCH-mode cores)
+    // =====================================================================
+
+    inline static Kernel::CrunchDispatcher<Cfg> s_crunchDispatcher{};
+
+    // =====================================================================
     // Kernel Tasks (emplaced by SystemBuilder::build())
     // =====================================================================
 
@@ -682,6 +805,8 @@ template <typename Cfg> class System
 
     inline static IBackgroundTask *s_backgroundTasks[CfgMaxBackgroundTasks<Cfg>::value] = {};
     inline static std::size_t      s_backgroundTaskCount{0};
+    inline static std::size_t      s_bgRoundRobin{0};
+    inline static std::size_t      s_backgroundCoreId{0};
 
     // =====================================================================
     // Per-Core Task Lists
@@ -698,6 +823,7 @@ template <typename Cfg> class System
     inline static bool                s_built{false};
     inline static SputterMicros       s_lastTime[kCoreCount]{};
     inline static Kernel::KernelState s_kernelState{Kernel::KernelState::UNCONFIGURED};
+    inline static std::atomic<bool>   s_safetyAbort{false};
 
     // =====================================================================
     // Run API State
@@ -708,6 +834,10 @@ template <typename Cfg> class System
     inline static TelemetryLogger::DrainWriteFn s_drainFn{nullptr};
     inline static void                         *s_drainCtx{nullptr};
     inline static bool                          s_coreInitialized[kCoreCount]{};
+
+    /** @brief Platform watchdog kick stored during build for CrunchDispatcher. */
+    using WatchdogKickFn = void (*)();
+    inline static WatchdogKickFn s_watchdogKickFn{nullptr};
 
     // =====================================================================
     // Kernel State Machine

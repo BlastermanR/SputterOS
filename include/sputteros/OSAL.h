@@ -21,10 +21,12 @@
 
 // ── Task Interfaces ─────────────────────────────────────────────────────────
 #include "sputteros/osal/tasks/IBackgroundTask.h"
+#include "sputteros/osal/tasks/ICrunchTask.h"
 #include "sputteros/osal/tasks/IScheduledTask.h"
 #include "sputteros/osal/tasks/ITask.h"
 
 // ── Synchronization ─────────────────────────────────────────────────────────
+#include "sputteros/osal/sync/AtomicDoubleBuffer.h"
 #include "sputteros/osal/sync/ICommandConsumer.h"
 #include "sputteros/osal/sync/ICommandProducer.h"
 #include "sputteros/osal/sync/ICoreErrorHandler.h"

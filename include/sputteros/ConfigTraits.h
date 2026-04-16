@@ -429,6 +429,23 @@ template <typename Cfg> struct CfgMetricsWindowUs<Cfg, std::void_t<decltype(Cfg:
     static constexpr SputterMicros value = Cfg::kMetricsWindowUs;
 };
 
+/**
+ * @brief Extracts `Cfg::kCrunchMaxOverruns` or defaults to 10.
+ *
+ * Maximum number of consecutive WCET overruns tolerated by
+ * `CrunchDispatcher` before `onCrunchAbort()` is called and the
+ * crunch loop terminates. Set to 0 to disable overrun escalation.
+ */
+template <typename Cfg, typename = void> struct CfgCrunchMaxOverruns
+{
+    static constexpr uint32_t value = 10;
+};
+
+template <typename Cfg> struct CfgCrunchMaxOverruns<Cfg, std::void_t<decltype(Cfg::kCrunchMaxOverruns)>>
+{
+    static constexpr uint32_t value = Cfg::kCrunchMaxOverruns;
+};
+
 } // namespace SputterOS
 
 #endif // SPUTTEROS_CONFIG_TRAITS_H

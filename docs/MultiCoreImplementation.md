@@ -13,11 +13,13 @@ How to distribute SputterOS across multiple CPU cores while preserving safety gu
 5. [Dual-Core Reference — RP2350](#dual-core-reference--rp2350)
 6. [Watchdog Health Monitoring](#watchdog-health-monitoring)
 7. [Inter-Core Command Queue](#inter-core-command-queue)
-8. [Memory Ordering](#memory-ordering)
-9. [ISR Registration Across Cores](#isr-registration-across-cores)
-10. [Performance Characteristics](#performance-characteristics)
-11. [Single-Core Fallback](#single-core-fallback)
-12. [Testing Multi-Core Code](#testing-multi-core-code)
+8. [AtomicDoubleBuffer — Latest-Value Sharing](#atomicdoublebuffer--latest-value-sharing)
+9. [Safety Abort Bridge](#safety-abort-bridge)
+10. [Memory Ordering](#memory-ordering)
+11. [ISR Registration Across Cores](#isr-registration-across-cores)
+12. [Performance Characteristics](#performance-characteristics)
+13. [Single-Core Fallback](#single-core-fallback)
+14. [Testing Multi-Core Code](#testing-multi-core-code)
 
 ---
 
@@ -32,6 +34,7 @@ How to distribute SputterOS across multiple CPU cores while preserving safety gu
 
 Multi-core adds memory-ordering and synchronization constraints. SputterOS handles these with:
 - `LockFreeQueue` - SPSC ring buffer with `std::atomic` acquire/release
+- `AtomicDoubleBuffer<T>` - wait-free SWSR double buffer for latest-value sensor/state sharing
 - `MultiCoreSync<N>` - lifecycle state machine with barriers
 - `WatchdogSync<N>` - per-core heartbeat staleness detection
 
@@ -39,29 +42,41 @@ Multi-core adds memory-ordering and synchronization constraints. SputterOS handl
 
 ## Core Assignment
 
-### Dual-Core (RP2350, ESP32)
+### Dual-Core: FLAT_LOOP Mode (Default)
 
 ```
-Core 0 (Deterministic)           Core 1 (Best-Effort)
-──────────────────────           ────────────────────
-ControlTask<Cfg>    ← ICriticalTask   CommsTask<Cfg>        ← IAsyncTask
- • evaluateSafety()                    • CLI + CommandParser
- • processCommands()                   • try_push() → queue
- • IUserApplication::tick()            DiagnosticsTask       ← IAsyncTask
-                                        • watchdog kick
-                                        • TaskTimer scan
-                                        • MemoryProfiler
+Core 0 (Deterministic)              Core 1 (Best-Effort)
+──────────────────────              ────────────────────
+ScheduledControlTask<Cfg>           ScheduledCommsTask<Cfg>
+ • evaluateSafety()                   • CLI + CommandParser
+ • processCommands()                  • try_push() → queue
+ • IUserApplication::tick()          BackgroundDiagnosticsTask
+                                       • watchdog kick
+                                       • TaskTimer scan
+                                       • MemoryProfiler
+```
+
+### Dual-Core: CRUNCH Mode (Core 1 Exclusive)
+
+When `builder.core(1).setCrunchTask()` is called, Core 1 runs a bare `ICrunchTask` tight loop instead of the cooperative scheduler. `ScheduledCommsTask` falls back to Core 0.
+
+```
+Core 0 (Deterministic)              Core 1 (CRUNCH)
+──────────────────────              ───────────────
+ScheduledControlTask<Cfg>           ICrunchTask tight loop:
+ScheduledCommsTask<Cfg>  ← fallback   while (active) crunch(now)
+BackgroundDiagnosticsTask            No Phase 2. Blocking I/O permitted.
 ```
 
 ### Core Affinity Rules (Enforced by `SystemBuilder::build()`)
 
 | Task Type | Allowed Cores | Rationale |
 |---|---|---|
-| `ICriticalTask` | Core 0 only | Deterministic, interrupt-free |
-| `IAsyncTask` | Core 1+ only (multi-core) | Tolerant of I/O jitter |
-| User tasks inheriting `ITask` | Any core | Your responsibility |
+| `IScheduledTask` | Any core | Periodic, cooperative |
+| `IBackgroundTask` | Background core (Phase 2) | Best-effort, budget-capped |
+| `ICrunchTask` | Core 1+ only (multi-core) | Exclusive tight loop; blocking I/O allowed within `maxIterationUs()` |
 
-`build()` returns a `BuildResult` failure if affinity is violated.
+`build()` returns a `BuildResult` failure if placement rules are violated.
 
 ---
 
@@ -359,6 +374,8 @@ When `try_push()` returns `false`, `CommsTask` sends a `NACK` response to the op
 
 ---
 
+---
+
 ## Memory Ordering
 
 ### Golden Rule
@@ -377,7 +394,9 @@ queue.try_pop(cmd);   // load head with acquire — sees complete cmd fields
 
 ### Custom Cross-Core Data
 
-If you share data beyond the command queue (e.g. a live pressure reading), use `std::atomic` with explicit ordering:
+For multi-word structs or any data larger than a single atomic scalar, use `AtomicDoubleBuffer<T>` (see [AtomicDoubleBuffer — Latest-Value Sharing](#atomicdoublebuffer--latest-value-sharing) below) instead of raw atomics.
+
+For single scalar values, `std::atomic` with explicit ordering is also acceptable:
 
 ```cpp
 // Core 1 writes
@@ -389,6 +408,101 @@ float p = g_latestPressure.load(std::memory_order_acquire);
 ```
 
 **Avoid:** plain assignment to shared non-atomic variables across cores. The compiler and CPU may reorder reads/writes, causing torn or stale values.
+
+---
+
+## AtomicDoubleBuffer — Latest-Value Sharing
+
+`AtomicDoubleBuffer<T, CachePolicy>` is a wait-free, single-writer / single-reader double buffer designed for sharing the **most recent** value of a multi-word struct between cores without locking.
+
+### When to Use
+
+| Use `AtomicDoubleBuffer<T>` | Use `LockFreeQueue<Cfg, N>` |
+|---|---|
+| Latest sensor reading / setpoint | Every command must be processed |
+| High-frequency telemetry snapshots | Order-sensitive command streams |
+| Core 1 crunch task writing state back to Core 0 | UART-sourced operator commands |
+| Scalar or struct; overwriting stale data is acceptable | Cannot afford to drop any entry |
+
+### Usage
+
+```cpp
+#include "sputteros/osal/sync/AtomicDoubleBuffer.h"
+
+struct SensorState { float pressure; float temperature; uint32_t seq; };
+
+// Shared buffer — lives in a struct/class accessible by both cores.
+AtomicDoubleBuffer<SensorState> g_sensorState;
+
+// Producer (Core 1):
+SensorState s = readSensors();
+g_sensorState.write(s);   // memory_order_release + optional cache flush
+
+// Consumer (Core 0):
+SensorState latest = g_sensorState.read();  // memory_order_acquire + optional invalidate
+```
+
+### Memory Ordering
+
+`write()` stores the slot index with `memory_order_release`; `read()` loads it with `memory_order_acquire`. This establishes a happens-before edge: all fields written by the producer before `write()` are visible to the consumer after `read()`, with no additional fencing required.
+
+### CachePolicy
+
+On platforms with software-managed D-cache, wrap the buffer with a custom policy:
+
+```cpp
+struct STM32CachePolicy {
+    static void flushBuffer(const void* addr, std::size_t bytes) {
+        SCB_CleanDCache_by_Addr(reinterpret_cast<uint32_t*>(const_cast<void*>(addr)),
+                                static_cast<int32_t>(bytes));
+    }
+    static void invalidateBuffer(const void* addr, std::size_t bytes) {
+        SCB_InvalidateDCache_by_Addr(reinterpret_cast<uint32_t*>(const_cast<void*>(addr)),
+                                     static_cast<int32_t>(bytes));
+    }
+};
+
+AtomicDoubleBuffer<SensorState, STM32CachePolicy> g_sensorState;
+```
+
+The default `NoCachePolicy` compiles to zero overhead on cache-coherent hosts and most Cortex-M platforms.
+
+---
+
+## Safety Abort Bridge
+
+When the CRUNCH core is running a tight loop with no Phase 1 safety evaluation, the kernel needs a lock-free mechanism to propagate a safety abort from Core 0's `ControlTask` to Core 1's `CrunchDispatcher`.
+
+### Signal Path
+
+```
+Core 0 (ControlTask::evaluateSafety)    Core 1 (CrunchDispatcher::runLoop)
+────────────────────────────────────    ─────────────────────────────────
+ISafetyMonitor::isSafe() == false
+IUserApplication::forceSafeAbort()
+System<Cfg>::signalSafetyAbort()  ──→  (atomic release store)
+                                        ...
+                                        isSafetyAborted() → true  (acquire load)
+                                        m_task->onCrunchAbort()
+                                        log(SOFT_ABORT)
+                                        return from runLoop()
+```
+
+### Implementation
+
+`System<Cfg>` holds a single `inline static std::atomic<bool> s_safetyAbort{false}`. The write uses `memory_order_release` and the read uses `memory_order_acquire`, establishing a happens-before edge: all writes made by `ControlTask` before the signal are visible to `CrunchDispatcher` after the acquire load.
+
+| API | Semantics |
+|-----|-----------|
+| `System<Cfg>::signalSafetyAbort()` | Release store `true` — called by `ControlTask` on safety failure |
+| `System<Cfg>::isSafetyAborted()` | Acquire load — polled by `CrunchDispatcher` before every `crunch()` call |
+| `System<Cfg>::clearSafetyAbort()` | Relaxed store `false` — cleared by `System::reset()` or explicitly by tests |
+
+### Abort Latency
+
+At most **one** additional `crunch()` call executes after the signal is posted — the call in-flight when Core 1 last checked the flag. The next iteration's pre-loop acquire load detects the flag and exits. Bounded abort latency is therefore `maxIterationUs()` in the worst case.
+
+`CrunchDispatcher` also performs a **pre-loop check** before entering the dispatch loop, handling the case where the abort is signalled between `System::build()` and the first `crunch()` call (e.g., a safety failure during the startup barrier).
 
 ---
 
@@ -466,7 +580,7 @@ struct MyConfig {
 Effects:
 - `SyncType` becomes `NoOpMultiCoreSync` — all barriers return `true` immediately
 - All three kernel tasks run on Core 0 in a single tick loop
-- `SystemBuilder::build()` skips core-affinity validation for `IAsyncTask`
+- `SystemBuilder::build()` skips core-affinity validation in single-core mode
 - `WatchdogSync<1>` still works with a single core heartbeat
 
 Single-core `main()` simplifies to:
@@ -690,10 +804,57 @@ Watch atomics during queue operations.
 
 ---
 
+## CRUNCH Core Mode
+
+For workloads that require exclusive CPU access and bounded blocking (servo PWM, SPI-based sensor polling, motor controllers), a core can be set to `CoreDispatchMode::CRUNCH` via `CoreBuilder::setCrunchTask()`.
+
+### How It Works
+
+When `System<Cfg>::run(coreId)` is called on a CRUNCH core it executes:
+
+```cpp
+// Simplified — no tick(), no Phase 2:
+while (isActiveState(s_kernelState) && !anyStopConditionFired())
+    core.crunchTask->crunch(s_timer.nowMicros());
+```
+
+The standard Phase 1 cooperative scheduler and Phase 2 background dispatch are **not** invoked on a CRUNCH core.
+
+### Registration
+
+```cpp
+MyServoTask servo;  // implements ICrunchTask
+
+SputterOS::SystemBuilder<MyCfg> builder(&app, monitors, count);
+builder.core(1).setCrunchTask(&servo);
+auto result = builder.build();
+
+// On Core 1:
+System<MyCfg>::run(1);  // bare crunch loop
+```
+
+### Constraints
+
+| Rule | Description |
+|------|-------------|
+| No Core 0 | CRUNCH core must be Core 1 or higher |
+| Exclusive | A CRUNCH core may have no other scheduled tasks |
+| Multi-core only | `kCoreCount >= 2` required |
+| Period floor | `crunchPeriodUs()` ≥ `kMinSchedulePeriodUs` |
+
+### Overrun Detection
+
+`ICrunchTask::maxIterationUs()` declares the expected worst-case execution time for one `crunch()` call. If that bound is exceeded on `kCrunchMaxOverruns` (default 10) consecutive calls, `onCrunchAbort()` is invoked on the task. The crunch loop continues unless the implementation or a stop condition halts it.
+
+See [SchedulingDesign.md §7](SchedulingDesign.md#crunch-core-mode) for the full dispatch specification.
+
+---
+
 ## Summary
 
 - **Dual-core execution** gives true parallelism and lower jitter for safety-critical control.
-- **Standard assignment:** ControlTask on Core 0 (deterministic), CommsTask on Core 1 (I/O).
+- **Standard assignment (FLAT_LOOP):** ControlTask on Core 0 (deterministic), CommsTask + DiagnosticsTask on Core 1.
+- **CRUNCH assignment:** Core 1 runs an exclusive `ICrunchTask` tight loop; CommsTask falls back to Core 0.
 - **Sync mechanism:** `SystemBuilder<Cfg>` provides a built-in `LockFreeQueue<Cfg, N>` accessed via `builder.commandQueue()`. Do not instantiate `LockFreeQueue` directly — its constructor is private.
 - **Memory ordering:** Always use `acquire` on reads, `release` on writes to shared atomics.
 - **ISRs on either core:** Both cores see ISR latches via acquire/release semantics.

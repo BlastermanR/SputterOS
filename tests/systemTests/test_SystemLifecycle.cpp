@@ -179,8 +179,9 @@ TEST_F(SystemLifecycleSingleCore, TaskCountReflectsKernelAndUserTasks)
     builder.core(0).addScheduledTask(&userTask);
     ASSERT_TRUE(builder.build());
 
-    // Single-core: ScheduledControlTask + ScheduledCommsTask + BackgroundDiagnosticsTask + userTask = 4
-    EXPECT_EQ(System<SCfg>::taskCount(0), 4u);
+    // Single-core: ScheduledControlTask + ScheduledCommsTask + userTask = 3
+    // BackgroundDiagnosticsTask is dispatched via the background ring, not the core list.
+    EXPECT_EQ(System<SCfg>::taskCount(0), 3u);
 }
 
 TEST_F(SystemLifecycleSingleCore, MultipleTicksAccumulateCorrectly)
@@ -249,6 +250,6 @@ TEST_F(SystemLifecycleDualCore, KernelTasksDistributedAcrossCores)
     // Core 0: ScheduledControlTask only
     EXPECT_EQ(System<DCfg>::taskCount(0), 1u);
 
-    // Core 1: ScheduledCommsTask + BackgroundDiagnosticsTask
-    EXPECT_EQ(System<DCfg>::taskCount(1), 2u);
+    // Core 1: ScheduledCommsTask only (DiagnosticsTask is now in the background ring)
+    EXPECT_EQ(System<DCfg>::taskCount(1), 1u);
 }

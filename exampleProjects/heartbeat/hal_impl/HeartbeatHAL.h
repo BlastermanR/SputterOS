@@ -11,7 +11,7 @@
  *
  * ### Classes
  * - `StdoutStreamReader`       — Zero input, writes telemetry to stdout;
- *                                satisfies `IStreamReader`.
+ *                                satisfies `IStream`.
  * - `AlwaysSafeSafetyMonitor`  — Always reports safe; satisfies `ISafetyMonitor`.
  *
  * @author Ryan Massie (rmassie)

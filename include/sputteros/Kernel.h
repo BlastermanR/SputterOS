@@ -18,6 +18,7 @@
  */
 
 // ── Kernel Core ─────────────────────────────────────────────────────────────
+#include "sputteros/kernel/CrunchDispatcher.h"
 #include "sputteros/kernel/KernelConstructTag.h"
 #include "sputteros/kernel/KernelState.h"
 #include "sputteros/kernel/System.h"

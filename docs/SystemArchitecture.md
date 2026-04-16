@@ -25,9 +25,10 @@ graph TB
 
     subgraph "System&lt;Cfg&gt; — Runtime Singleton"
         SYS["System&lt;Cfg&gt;<br/>inline static data members"]
-        CT["ControlTask&lt;Cfg&gt;<br/>ICriticalTask"]
-        CMT["CommsTask&lt;Cfg&gt;<br/>IAsyncTask"]
-        DT["DiagnosticsTask<br/>IAsyncTask"]
+        CT["ScheduledControlTask&lt;Cfg&gt;<br/>IScheduledTask"]
+        CMT["ScheduledCommsTask&lt;Cfg&gt;<br/>IScheduledTask"]
+        DT["BackgroundDiagnosticsTask<br/>IBackgroundTask"]
+        BG_RING["Background Ring<br/>gap-time dispatch"]
         LFQ["LockFreeQueue&lt;Cfg,N&gt;<br/>SPSC ring buffer"]
         WD["WatchdogSync&lt;N&gt;<br/>heartbeat monitor"]
         MCS["MultiCoreSync&lt;N&gt;<br/>lifecycle barriers"]
@@ -43,13 +44,13 @@ graph TB
     end
 
     subgraph "OSAL Interfaces"
-        IT["ITask / ICriticalTask / IAsyncTask"]
+        IT["ITask / IScheduledTask / IBackgroundTask / ICrunchTask"]
         IMQ["IMessageQueue&lt;Cfg&gt;"]
         ICP["ICommandProducer / ICommandConsumer"]
     end
 
     subgraph "HAL Interfaces"
-        ISR["IStreamReader"]
+        ISR["IStream"]
     end
 
     MAIN -->|"constructs"| SB
@@ -62,7 +63,8 @@ graph TB
     SAFETY -->|"evaluated by"| CT
     HALIMPL -->|"implements"| ISR
 
-    SYS --> CT & CMT & DT & LFQ & WD & MCS & EL & MP
+    SYS --> CT & CMT & BG_RING & LFQ & WD & MCS & EL & MP
+    BG_RING --> DT
     CT -->|"try_pop()"| LFQ
     CMT -->|"try_push()"| LFQ
     DT -->|"reads timers"| CT & CMT
@@ -92,7 +94,8 @@ Configuration-only builder. Holds user-provided kernel dependencies (`IUserAppli
 4. builder.setTelemetryDrain(writeFn, ctx)             — wire telemetry output
 5. builder.setTelemetryMutex(&mutex)                   — (multi-core) guard shared logger
 6. builder.addStopCondition(predicate)                 — register exit conditions
-7. builder.core(0).addScheduledTask(&customTask)       — optional user tasks
+7. builder.core(0).addScheduledTask(&customTask)       — optional user tasks (FLAT_LOOP core)
+   builder.core(1).setCrunchTask(&crunchTask)          — OR: dedicate Core 1 to a tight-loop ICrunchTask
 8. auto result = builder.build()                       — validate + populate System
 9. System<Cfg>::run(coreId)                            — blocking run loop
 ```
@@ -118,13 +121,13 @@ When `IUserApplication` is non-null:
 
 1. Creates `ControlTask<Cfg>` via `KernelConstructTag` PassKey → emplaced into `System::s_controlTask`
 2. Creates `CommsTask<Cfg>` → `System::s_commsTask`
-3. Creates `DiagnosticsTask` → `System::s_diagsTask`
-4. Prepends kernel tasks to their core's task lists — auto-assigned by type (safety-first tick order)
+3. Creates `BackgroundDiagnosticsTask` → `System::s_diagsTask`
+4. Prepends `ScheduledControlTask` to Core 0 and `ScheduledCommsTask` to Core 1 (or Core 0 in single-core). `BackgroundDiagnosticsTask` is registered in the background ring only — it does **not** appear in any core task list.
 5. Validates: at least one core has tasks
-6. Validates: core affinity (multi-core: no `IAsyncTask` on Core 0, no `ICriticalTask` on Core 1+)
+6. Validates: user task core assignments
 7. Validates: task dependencies (`validateDependencies()` on every registered task)
-8. Builds flat task list for `DiagnosticsTask::setMonitoredTasks()`
-9. Sets `System::s_built = true`
+8. Builds flat task list for `BackgroundDiagnosticsTask::setMonitoredTasks()`
+9. Sets `System::s_backgroundCoreId` (last active core), then `System::s_built = true`
 
 ### Enforcement Mechanisms
 
@@ -134,7 +137,7 @@ When `IUserApplication` is non-null:
 | `KernelConstructTag` PassKey | Direct construction of kernel tasks |
 | `BuildResult` is `[[nodiscard]]` | Silently discarding `build()` result |
 | `assert(s_built)` in `init()`/`tick()` | Runtime before topology validation |
-| Core affinity check in `build()` | `ICriticalTask` on wrong core |
+| Core affinity check in `build()` | User tasks placed on wrong core |
 | `validateDependencies()` in `build()` | Missing device dependencies at startup |
 
 ---
@@ -153,12 +156,19 @@ When `IUserApplication` is non-null:
 | `s_errorLogger` | `ErrorLogger` | ISR-safe 32-entry circular fault log |
 | `s_memProfiler` | `MemoryProfiler` | Heap/stack high-water mark tracking |
 | `s_timer` | `SystemTimer` | Kernel-owned wrapper around the injected microsecond source |
-| `s_controlTask` | `std::optional<ControlTask<Cfg>>` | Emplaced by `build()` |
-| `s_commsTask` | `std::optional<CommsTask<Cfg>>` | Emplaced by `build()` |
-| `s_diagsTask` | `std::optional<DiagnosticsTask>` | Emplaced by `build()` |
-| `s_cores[]` | `CoreData[kCoreCount]` | Per-core task lists |
+| `s_controlTask` | `std::optional<ScheduledControlTask<Cfg>>` | Emplaced by `build()` |
+| `s_commsTask` | `std::optional<ScheduledCommsTask<Cfg>>` | Emplaced by `build()` |
+| `s_diagsTask` | `std::optional<BackgroundDiagnosticsTask>` | Emplaced by `build()` |
+| `s_cores[]` | `CoreData[kCoreCount]` | Per-core scheduled task lists |
 | `s_allTasks[]` | `ITask*[kMaxTotalTasks]` | Flat task list for diagnostics |
 | `s_allTaskCount` | `std::size_t` | Number of valid entries in `s_allTasks[]` |
+| `s_backgroundTasks[]` | `IBackgroundTask*[kMaxBackgroundTasks]` | Background ring (gap-time dispatch) |
+| `s_backgroundTaskCount` | `std::size_t` | Number of registered background tasks |
+| `s_bgRoundRobin` | `std::size_t` | Current background ring dispatch index |
+| `s_backgroundCoreId` | `std::size_t` | Core that runs Phase 2 background dispatch |
+| `s_crunchDispatcher` | `CrunchDispatcher<Cfg>` | CRUNCH-mode core runtime; configured and driven by `run()` on CRUNCH cores |
+| `s_watchdogKickFn` | `WatchdogKickFn` | Platform watchdog kick callback stored once at build time and forwarded to `CrunchDispatcher` |
+| `s_safetyAbort` | `std::atomic<bool>` | Cross-core safety abort flag; set (release store) by `ControlTask::evaluateSafety()`, read (acquire load) by `CrunchDispatcher` each iteration |
 | `s_built` | `bool` | Guard flag set by `build()` |
 | `s_lastTime[]` | `SputterMicros[kCoreCount]` | Last observed tick time per core for rollover detection |
 | `s_telemetryLogger` | `TelemetryLogger` | Kernel-owned shared telemetry logger |
@@ -184,6 +194,9 @@ When `IUserApplication` is non-null:
 | `memProfiler()` | Access the kernel-owned memory profiler |
 | `isBuilt()` | Query whether `build()` has been called |
 | `kernelState()` | Current lifecycle state (`UNCONFIGURED` through `SHUTDOWN`) |
+| `signalSafetyAbort()` | Set the cross-core safety abort flag (`memory_order_release`). Called by `ControlTask` on safety failure; read by `CrunchDispatcher` on CRUNCH cores. |
+| `isSafetyAborted()` | Query the safety abort flag (`memory_order_acquire`). Returns `true` if a safety abort was signalled. |
+| `clearSafetyAbort()` | Clear the safety abort flag (`memory_order_relaxed`). Also cleared automatically by `reset()`. |
 | `taskCount(coreId)` | Number of tasks registered on a core |
 | `task(coreId, idx)` | Get a task pointer by core and index |
 
@@ -197,7 +210,7 @@ Lightweight struct with `ITask* tasks[kMaxTasks]` and `std::size_t taskCount`. S
 
 Three internal `ITask` implementations in `namespace SputterOS::Kernel`. Constructors require `KernelConstructTag` — only `SystemBuilder<Cfg>` and `KernelTestAccess` can instantiate them.
 
-### `ControlTask<Cfg>` — Deterministic Safety + Control (`ICriticalTask`)
+### `ScheduledControlTask<Cfg>` — Deterministic Safety + Control (`IScheduledTask`)
 
 Runs at a configurable fixed rate (default 100 Hz, set via `kControlBudgetUs`). Each `tick()`:
 
@@ -208,19 +221,19 @@ flowchart LR
     B --> C["IUserApplication::tick()"]
 ```
 
-1. **`evaluateSafety()`** — iterate all `ISafetyMonitor` instances. First `isSafe() == false` → `IUserApplication::forceSafeAbort()` + early return
+1. **`evaluateSafety()`** — iterate all `ISafetyMonitor` instances. First `isSafe() == false` → `IUserApplication::forceSafeAbort()` + `System<Cfg>::signalSafetyAbort()` (releases abort flag for CRUNCH cores) + early return
 2. **`processCommands()`** — drain up to `CfgMaxCommandsPerTick<Cfg>::value` commands via `ICommandConsumer::try_pop()` → `IUserApplication::handleCommand()`
 3. **`IUserApplication::tick(systemTime)`**
 
 **Dependencies:** `ICommandConsumer<Cfg>*` (the queue), `IUserApplication<Cfg>*`, `ISafetyMonitor**`, `size_t monitorCount`
 
-### `CommsTask<Cfg>` — Serial Command Reception (`IAsyncTask`)
+### `ScheduledCommsTask<Cfg>` — Serial Command Reception (`IScheduledTask`)
 
 Runs asynchronously. Supports two modes: TEXT (legacy ASCII) and FRAMED (COBS binary). See [CommsProtocol.md](CommsProtocol.md) for full protocol specification.
 
 **TEXT mode** — Each `tick()`:
 
-1. `CLI<Cfg>::tick()` — drain up to 64 bytes from `IStreamReader`, feed each to `CommandParser<Cfg>`
+1. `CLI<Cfg>::tick()` — drain up to 64 bytes from `IStream`, feed each to `CommandParser<Cfg>`
 2. Complete commands → `ICommandProducer::try_push()`. Success → `ACK <cmdId>\n`. Queue full → `NACK <cmdId> <targetDevice> <value>\n`
 
 **FRAMED mode** — Each `tick()`:
@@ -233,16 +246,18 @@ Runs asynchronously. Supports two modes: TEXT (legacy ASCII) and FRAMED (COBS bi
 
 `ScheduledCommsTask<Cfg>` implements `IProtocolHandler<Cfg>` to handle all protocol callbacks.
 
-**Dependencies:** `IStreamReader*`, `ICommandProducer<Cfg>*`
+**Dependencies:** `IStream*`, `ICommandProducer<Cfg>*`
 
-### `DiagnosticsTask` — System Health Monitor (`IAsyncTask`)
+### `BackgroundDiagnosticsTask` — System Health Monitor (`IBackgroundTask`)
 
-Non-templated. Each `tick()`:
+Non-templated. Dispatched exclusively via Phase 2 (background ring) — not in any core's scheduled task list. Each `tick()`:
 
 1. Kick hardware watchdog via `WatchdogKickFn` (nullable to disable)
 2. Scan all monitored `TaskTimer` instances against the configurable control budget (`kControlBudgetUs`, default 10 ms); log overruns to `ErrorLogger`
 3. `MemoryProfiler::update()`
 4. Every `kMemCheckInterval` (100) ticks: log memory health snapshot
+
+Declares `maxBudgetUs() = 1000` µs per dispatch. The first background task in each round-robin cycle always dispatches unconditionally (see [SchedulingDesign.md §6](SchedulingDesign.md)).
 
 **Dependencies:** `ErrorLogger&`, `MemoryProfiler&`, `WatchdogKickFn`
 
@@ -255,7 +270,7 @@ Pure abstract C++ interfaces. All inherit `ISputterDevice` (non-copyable, protec
 | Interface | Key Methods | Notes |
 |---|---|---|
 
-| `IStreamReader` | `available()`, `read()`, `write()`, `isConnected()` | Bidirectional byte stream. All non-blocking. Does not inherit `ISputterDevice`. |
+| `IStream` | `available()`, `read()`, `write()`, `isConnected()` | Bidirectional byte stream. All non-blocking. Does not inherit `ISputterDevice`. |
 
 ### Dummy Stubs (`tests/unit/mocks/`)
 
@@ -271,8 +286,8 @@ Pure abstract C++ interfaces. All inherit `ISputterDevice` (non-copyable, protec
 
 The OSAL layer is organized into two subfolders:
 
-- **`tasks/`** — Task abstraction hierarchy (`ITask`, `ICriticalTask`, `IAsyncTask`)
-- **`sync/`** — Synchronization and queuing primitives (`IMessageQueue`, `LockFreeQueue`, `MultiCoreSync`, `WatchdogSync`, `IMutex`, etc.)
+- **`tasks/`** — Task abstraction hierarchy (`ITask`, `IScheduledTask`, `IBackgroundTask`, `ICrunchTask`)
+- **`sync/`** — Synchronization and queuing primitives (`IMessageQueue`, `LockFreeQueue`, `AtomicDoubleBuffer`, `MultiCoreSync`, `WatchdogSync`, `IMutex`, etc.)
 - **Root** — Shared types (`SputterTime.h` — 64-bit µs time type and `SystemTimer` class)
 
 ### Task Hierarchy
@@ -283,19 +298,20 @@ classDiagram
         <<interface>>
         +init()
         +tick(SputterMicros systemTimeMicros)
-        +isCritical() bool
-        +isAsync() bool
+        +isScheduled() bool
+        +isBackground() bool
         +timer() TaskTimer&
         +addDevice(ISputterDevice*) bool
         +device(idx) ISputterDevice*
         +deviceCount() size_t
         +validateDependencies() bool
     }
-    class ICriticalTask {
-        +isCritical() true
+    class IScheduledTask {
+        +isScheduled() true
     }
-    class IAsyncTask {
-        +isAsync() true
+    class IBackgroundTask {
+        +isBackground() true
+        +maxBudgetUs() SputterMicros
     }
     class TaskTimer {
         +start()
@@ -315,14 +331,14 @@ classDiagram
         +reset()
     }
 
-    ITask <|-- ICriticalTask
-    ITask <|-- IAsyncTask
+    ITask <|-- IScheduledTask
+    ITask <|-- IBackgroundTask
     ITask *-- TaskTimer : m_timer
 ```
 
-- `ICriticalTask` — auto-assigned to Core 0 by `SystemBuilder::build()`.
-- `IAsyncTask` — auto-assigned to Core 1 in multi-core (or Core 0 in single-core). Enforced at build time.
-- `TaskTimer` — embedded in every `ITask`; `System::tick()` instruments `start()`/`stop()`.
+- `IScheduledTask` — dispatched every tick by Phase 1 of `System::tick()`. `ScheduledControlTask` is auto-placed on Core 0; `ScheduledCommsTask` on Core 1 (or Core 0 in single-core).
+- `IBackgroundTask` — dispatched by Phase 2 of `System::tick()` in round-robin order on the background core. `maxBudgetUs()` declares the task's maximum allowed wall-clock budget per dispatch.
+- `TaskTimer` — embedded in every `ITask`; `System::tick()` instruments `start()`/`stop()` for both scheduled and background tasks.
 - **Device Dependencies** — `ITask` tracks up to 16 registered `ISputterDevice*` pointers via `addDevice()`. Override `validateDependencies()` to declare required devices; `SystemBuilder::build()` calls this on every task and fails the build if any returns `false`.
 
 ### Message Queue Hierarchy
@@ -365,6 +381,7 @@ classDiagram
 
 | Class | Purpose |
 |---|---|
+| `AtomicDoubleBuffer<T, CachePolicy>` | Wait-free SWSR double buffer for latest-value cross-core data sharing. `write()` stores with `memory_order_release`; `read()` loads with `memory_order_acquire`. Default `NoCachePolicy` is zero-cost on cache-coherent platforms; provide a custom `CachePolicy` with `flushBuffer`/`invalidateBuffer` statics for devices with non-coherent D-cache (STM32H7, ESP32-S3). |
 | `MultiCoreSync<N>` | Per-core lifecycle state machine: `UNBORN → INIT → READY → SHUTDOWN` (or `ERROR`). Startup/shutdown barriers with `std::chrono::milliseconds` timeouts. |
 | `WatchdogSync<N>` | Atomic heartbeat per core. `kick(coreId, time)` updates timestamp; `isStale(coreId, time, timeout)` detects hangs. |
 | `NoOpMultiCoreSync` | Stub for single-core configs (`kCoreCount < 2`). All methods are no-ops. |
@@ -397,7 +414,7 @@ The utility layer is organized into two subfolders:
 | `CLI<Cfg>` | Stream + parser + string builder wrapper. `tick()` drains 64 bytes/call. |
 | `ErrorLogger` | ISR-safe 32-entry circular ring buffer. 8 error codes (including `TIMER_ROLLOVER`). `std::chrono::milliseconds` timestamps. |
 | `PIDController` | Discrete PID with anti-windup. `compute(setpoint, feedback, time)`. Call `reset()` on phase transitions. |
-| `TelemetryLogger` | Task-tagged, verbosity-filtered live output. 32-entry buffer, drains to `IStreamReader`. |
+| `TelemetryLogger` | Task-tagged, verbosity-filtered live output. 32-entry buffer, drains to `IStream`. |
 | `MemoryProfiler` | Heap/stack high-water mark tracking. Platform stubs return 0 — subclass for real hardware. |
 | `LightweightStringBuilder` | 128-byte fixed-capacity heap-free formatter. Chainable `append()`. |
 | `NonBlockingStopwatch` | Monotonic timer: `hasExpired(time, duration) → bool`. |
@@ -425,6 +442,8 @@ SputterOS uses **compile-time template parameters**. Define a plain struct satis
 | `kMaxValidCommandID` | `static constexpr uint8_t` | Optional | 255 |
 | `kControlBudgetUs` | `static constexpr uint32_t` | Optional | 10000 (10 ms / 100 Hz) |
 | `kMetricsWindowUs` | `static constexpr uint64_t` | Optional | 60 000 000 (60 s) |
+| `kMaxBackgroundTasks` | `static constexpr std::size_t` | Optional | 16 |
+| `kCrunchMaxOverruns` | `static constexpr uint32_t` | Optional | 10 |
 
 `ConfigValidator<Cfg>` enforces `static_assert` checks at template instantiation.
 
@@ -436,14 +455,14 @@ SputterOS uses **compile-time template parameters**. Define a plain struct satis
 sequenceDiagram
     participant Main as main() loop
     participant Sys as System&lt;Cfg&gt;::tick()
-    participant CT as ControlTask
+    participant CT as ScheduledControlTask
     participant App as IUserApplication
-    participant CMT as CommsTask
+    participant CMT as ScheduledCommsTask
     participant CLI as CLI&lt;Cfg&gt;
     participant Q as LockFreeQueue
-    participant DT as DiagnosticsTask
+    participant DT as BackgroundDiagnosticsTask
 
-    Main->>Sys: tick(0, now)
+    Main->>Sys: tick(0, now) [Core 0 — Phase 1]
     Sys->>CT: timer.start() → tick(now) → timer.stop()
     CT->>CT: evaluateSafety() — ISafetyMonitor[]
     CT->>Q: try_pop() × kMaxCommandsPerTick
@@ -451,13 +470,14 @@ sequenceDiagram
     CT->>App: handleCommand(cmd)
     CT->>App: tick(now)
 
-    Main->>Sys: tick(1, now)
+    Main->>Sys: tick(1, now) [Core 1 — Phase 1]
     Sys->>CMT: timer.start() → tick(now) → timer.stop()
-    CMT->>CLI: tick() — drain bytes from IStreamReader
+    CMT->>CLI: tick() — drain bytes from IStream
     CLI->>Q: try_push(cmd)
     Q-->>CLI: success/full
     CLI-->>CMT: ACK or NACK
 
+    Note over Sys: Phase 2 — background dispatch (Core 1 only, gap-time)
     Sys->>DT: timer.start() → tick(now) → timer.stop()
     DT->>DT: kickWatchdog()
     DT->>DT: scan TaskTimers for budget violations
@@ -514,19 +534,22 @@ These two safety mechanisms serve different tiers and should not be confused:
 
 ## Core Affinity Rules
 
-| Task Type | Core 0 | Core 1+ |
-|---|---|---|
-| `ICriticalTask` | Allowed | **Rejected** by `build()` |
-| `IAsyncTask` | **Rejected** (multi-core) | Allowed |
-| Plain `ITask` | Allowed | Allowed |
+| Task Type | Core 0 | Core 1+ | Background Ring |
+|---|---|---|---|
+| `IScheduledTask` (user) | Allowed | Allowed (FLAT_LOOP core only) | — |
+| `ScheduledControlTask` | Always Core 0 | N/A | — |
+| `ScheduledCommsTask` | Single-core; or Core 0 fallback when Core 1 is CRUNCH | Core 1 in standard dual-core | — |
+| `ICrunchTask` | Not allowed (Core 0 is reserved for safety loop) | Core 1+ only; one per core; no other tasks on that core | — |
+| `IBackgroundTask` | Dispatched if `s_backgroundCoreId == 0` | Dispatched if `s_backgroundCoreId == coreId` | **Registered here** |
+| `BackgroundDiagnosticsTask` | Core 0 (single-core) | Core 1 (dual-core) | Slot 0 |
 
-In single-core mode (`kCoreCount == 1`), all tasks run on Core 0 — affinity checks are skipped.
+In single-core mode (`kCoreCount == 1`), all scheduled tasks run on Core 0 and the background core is also Core 0.
 
 ---
 
 ## Data Flow Summary
 
-1. **Command reception**: The platform scheduler calls `CommsTask<Cfg>::tick(SputterMicros systemTimeMicros)` each cycle. `CLI<Cfg>` drains the `IStreamReader` byte stream, `CommandParser<Cfg>` assembles ASCII lines into `Cfg::Command` packets, and `CommsTask` pushes validated packets into the `LockFreeQueue<Cfg, N>` via `ICommandProducer::try_push()`. On success the host receives `ACK <cmdId>\n`; if the queue is full the host receives `NACK <cmd_id> <sub_id> <value>\n`.
+1. **Command reception**: The platform scheduler calls `CommsTask<Cfg>::tick(SputterMicros systemTimeMicros)` each cycle. `CLI<Cfg>` drains the `IStream` byte stream, `CommandParser<Cfg>` assembles ASCII lines into `Cfg::Command` packets, and `CommsTask` pushes validated packets into the `LockFreeQueue<Cfg, N>` via `ICommandProducer::try_push()`. On success the host receives `ACK <cmdId>\n`; if the queue is full the host receives `NACK <cmd_id> <sub_id> <value>\n`.
 
 2. **Safety evaluation**: `ControlTask<Cfg>::tick(SputterMicros systemTimeMicros)` calls `evaluateSafety()` first. It iterates all registered `ISafetyMonitor` instances and calls `isSafe()` on each. Any monitor returning `false` immediately calls `IUserApplication<Cfg>::forceSafeAbort()` and returns before the application ticks.
 
@@ -534,9 +557,9 @@ In single-core mode (`kCoreCount == 1`), all tasks run on Core 0 — affinity ch
 
 4. **Process execution**: `IUserApplication<Cfg>::tick(SputterMicros systemTimeMicros)` is delegated to the user-provided concrete implementation. A typical implementation advances the active `IProcessState::execute(SputterMicros systemTimeMicros)` phase, which reads sensors through HAL interfaces, feeds readings into `PIDController` and `NonBlockingStopwatch`, and drives actuator setpoints. When a transition condition is met the phase initiates the appropriate transition.
 
-5. **Health monitoring**: `DiagnosticsTask::tick(SputterMicros systemTimeMicros)` kicks the hardware watchdog, checks `WatchdogSync::isStale()` for each core, scans all monitored per-task `TaskTimer` instances for budget violations, updates `MemoryProfiler` high-water marks, and periodically logs a memory snapshot to `ErrorLogger`.
+5. **Health monitoring**: `BackgroundDiagnosticsTask::tick(SputterMicros systemTimeMicros)` is dispatched by **Phase 2 of `System::tick()`** on the background core (Core 1 in dual-core, Core 0 in single-core). It kicks the hardware watchdog, scans all monitored per-task `TaskTimer` instances for budget violations, updates `MemoryProfiler` high-water marks, and periodically logs a memory snapshot to `ErrorLogger`. The first background task in the round-robin ring always dispatches unconditionally each tick, guaranteeing health monitoring runs even when Phase 1 saturates the budget.
 
-6. **Telemetry response**: Phase implementations or tasks format responses using `LightweightStringBuilder`, deposit them into `CLI<Cfg>`'s builder, and call `CLI<Cfg>::flush()` to write back through `IStreamReader`.
+6. **Telemetry response**: Phase implementations or tasks format responses using `LightweightStringBuilder`, deposit them into `CLI<Cfg>`'s builder, and call `CLI<Cfg>::flush()` to write back through `IStream`.
 
 ---
 
@@ -557,6 +580,6 @@ The recommended startup sequence in `main.cpp`:
 10. Enter the scheduler loop, calling `System<Cfg>::tick(coreId, SputterMicros(...))` each cycle
 ```
 
-The kernel tasks (ControlTask, CommsTask, DiagnosticsTask) are created internally by `build()` — the user never sees their constructors. Safety monitors run first in the tick (ControlTask is prepended), then user tasks tick in registration order.
+The kernel tasks (`ScheduledControlTask`, `ScheduledCommsTask`, `BackgroundDiagnosticsTask`) are created internally by `build()` — the user never sees their constructors. `ScheduledControlTask` is prepended to Core 0, `ScheduledCommsTask` is prepended to Core 1 (or Core 0 in single-core), and `BackgroundDiagnosticsTask` is placed in slot 0 of the background ring. User scheduled tasks follow kernel tasks in tick order; user background tasks follow `BackgroundDiagnosticsTask` in the ring.
 
 Failing to call `build()` before `init()` triggers an assertion. Discarding the `BuildResult` is a compiler warning (`[[nodiscard]]`).
