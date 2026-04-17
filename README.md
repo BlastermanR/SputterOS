@@ -1,5 +1,9 @@
 # SputterOS
 
+<p align="center">
+  <img src="Sputty.png" alt="Sputty the SputterOS mascot" width="200"/>
+</p>
+
 A **deterministic, hardware-agnostic C++17 control framework** for high-speed, safety-critical nanofabrication and vacuum systems. Native Asymmetric Multiprocessing (AMP), lock-free polling architecture, and compile-time safety verification eliminate RTOS jitter and concurrency bugs, no bare-metal expertise required. The library is roughly (~60 KiB).
 
 ## What is SputterOS?
