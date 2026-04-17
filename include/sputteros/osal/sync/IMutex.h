@@ -1,7 +1,7 @@
 #ifndef SPUTTEROS_OSAL_IMUTEX_H
 #define SPUTTEROS_OSAL_IMUTEX_H
 
-#include <chrono>
+#include "sputteros/osal/SputterTime.h"
 #include <cstdint>
 
 namespace SputterOS
@@ -39,21 +39,21 @@ class IMutex
 
     /**
      * @brief Acquire the mutex, blocking up to the given timeout.
-     * @param timeout Maximum time to wait. A value of 0 ms
+     * @param timeout Maximum time to wait in milliseconds. A value of 0
      *        indicates a non-blocking attempt (try-lock).
      * @return true if the mutex was successfully acquired, false on timeout or error.
      *
      * @note OSAL policy: callers must use bounded timeouts to avoid deadlocks.
      */
-    virtual bool lock(std::chrono::milliseconds timeout) = 0;
+    virtual bool lock(SputterMillis timeoutMs) = 0;
 
     /**
      * @brief Attempt to acquire the mutex without blocking.
      * @return true if the mutex was acquired, false otherwise.
      *
-     * Default implementation calls `lock(0ms)` and can be overridden for efficiency.
+     * Default implementation calls `lock(0)` and can be overridden for efficiency.
      */
-    virtual bool try_lock() { return lock(std::chrono::milliseconds{0}); }
+    virtual bool try_lock() { return lock(0); }
 
     /**
      * @brief Release the mutex.

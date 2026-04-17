@@ -16,7 +16,7 @@
 #include <gtest/gtest.h>
 #include <thread>
 
-using ms = std::chrono::milliseconds;
+using SputterMillis = SputterOS::SputterMillis;
 
 namespace
 {
@@ -64,7 +64,7 @@ TEST_F(MultiCoreSyncTest, DualCore_StartupSuccess)
             core1Ready = true;
 
             // Wait for Core 0 to be ready
-            EXPECT_TRUE(sync.startupBarrier(1, ms{1000}));
+            EXPECT_TRUE(sync.startupBarrier(1, 1000));
         });
 
     // Core 0
@@ -76,7 +76,7 @@ TEST_F(MultiCoreSyncTest, DualCore_StartupSuccess)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    EXPECT_TRUE(sync.startupBarrier(0, ms{1000}));
+    EXPECT_TRUE(sync.startupBarrier(0, 1000));
     EXPECT_FALSE(sync.anyError());
 
     core1.join();
@@ -90,7 +90,7 @@ TEST_F(MultiCoreSyncTest, DualCore_StartupTimeout)
     sync.setInit(0);
 
     // Core 1 never starts - timeout expected
-    EXPECT_FALSE(sync.startupBarrier(0, ms{10})); // 10ms timeout
+    EXPECT_FALSE(sync.startupBarrier(0, 10)); // 10ms timeout
     EXPECT_TRUE(sync.anyError());
 }
 
@@ -108,7 +108,7 @@ TEST_F(MultiCoreSyncTest, DualCore_ErrorPropagation)
             core1Started = true;
 
             // Wait indefinitely - should be interrupted by error
-            sync.startupBarrier(1, ms{10000});
+            sync.startupBarrier(1, 10000);
         });
 
     // Core 0
@@ -144,11 +144,11 @@ TEST_F(MultiCoreSyncTest, DualCore_ShutdownSuccess)
     std::thread core1(
         [&]()
         {
-            EXPECT_TRUE(sync.startupBarrier(1, ms{1000}));
+            EXPECT_TRUE(sync.startupBarrier(1, 1000));
             core1Ready = true;
         });
 
-    EXPECT_TRUE(sync.startupBarrier(0, ms{1000}));
+    EXPECT_TRUE(sync.startupBarrier(0, 1000));
 
     core1.join();
     EXPECT_TRUE(core1Ready);
@@ -161,13 +161,13 @@ TEST_F(MultiCoreSyncTest, DualCore_ShutdownSuccess)
         [&]()
         {
             sync.setShutdown(1);
-            EXPECT_TRUE(sync.shutdownBarrier(1, ms{1000}));
+            EXPECT_TRUE(sync.shutdownBarrier(1, 1000));
             core1Shutdown = true;
         });
 
     // Core 0 shutdown
     sync.setShutdown(0);
-    EXPECT_TRUE(sync.shutdownBarrier(0, ms{1000}));
+    EXPECT_TRUE(sync.shutdownBarrier(0, 1000));
 
     core1ShutdownThread.join();
     EXPECT_TRUE(core1Shutdown);

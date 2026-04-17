@@ -37,7 +37,6 @@
 
 #include "sputteros/osal/SputterTime.h"
 #include "sputteros/osal/sync/IMutex.h"
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 

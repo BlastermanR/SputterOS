@@ -275,10 +275,10 @@ TEST(LockFreeQueue, Push_WithTimeout_BehavesLikeTryPush)
     auto &q = System<Cfg>::commandQueue();
 
     auto cmd = makeCmd<Cfg>(1.0f);
-    EXPECT_TRUE(q.push(cmd, std::chrono::milliseconds(100)));
+    EXPECT_TRUE(q.push(cmd, 100));
 
     typename Cfg::Command out{};
-    EXPECT_TRUE(q.pop(out, std::chrono::milliseconds(100)));
+    EXPECT_TRUE(q.pop(out, 100));
     EXPECT_FLOAT_EQ(out.value, 1.0f);
 }
 

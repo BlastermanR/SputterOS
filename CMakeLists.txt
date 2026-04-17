@@ -9,6 +9,18 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# ── Freestanding Build Mode ───────────────────────────────────────────────────
+# Enable for bare-metal / embedded targets that lack a hosted C++ runtime.
+# Adds -ffreestanding -fno-exceptions -fno-rtti and defines
+# SPUTTEROS_FREESTANDING=1 so library headers can detect the mode.
+option(SPUTTEROS_FREESTANDING "Build for a freestanding (bare-metal) environment" OFF)
+
+if(SPUTTEROS_FREESTANDING)
+    message(STATUS "SputterOS: Freestanding build enabled (-ffreestanding -fno-exceptions -fno-rtti)")
+    add_compile_options(-ffreestanding -fno-exceptions -fno-rtti)
+    add_compile_definitions(SPUTTEROS_FREESTANDING=1)
+endif()
+
 # ── Top-Level vs Subproject Detection ─────────────────────────────────────────
 # When SputterOS is the top-level project: BUILD TESTS
 # When SputterOS is included via add_subdirectory() in a parent project: SKIP TESTS

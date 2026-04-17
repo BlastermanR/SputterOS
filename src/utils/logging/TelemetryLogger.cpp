@@ -9,7 +9,7 @@
 #include "sputteros/utils/logging/TelemetryLogger.h"
 #include "sputteros/utils/logging/LightweightStringBuilder.h"
 
-#include <cstring>
+#include "sputteros/utils/MemUtils.h"
 
 namespace SputterOS
 {
@@ -31,7 +31,7 @@ TelemetryLogger::TelemetryLogger(IMutex *guard)
 void TelemetryLogger::log(TaskID task, const char *text, Verbosity level, SputterMicros timestamp)
 {
     if (m_guard)
-        m_guard->lock(std::chrono::milliseconds{0});
+        m_guard->lock(0);
 
     // Overwrite the oldest entry when the buffer is full (black-box behaviour,
     // same contract as ErrorLogger).
@@ -49,7 +49,7 @@ void TelemetryLogger::log(TaskID task, const char *text, Verbosity level, Sputte
     e.task      = task;
     e.level     = level;
 
-    strncpy(e.text, text, kTextLen - 1);
+    sput_strncpy(e.text, text, kTextLen - 1);
     e.text[kTextLen - 1] = '\0';
 
     m_head = (m_head + 1) % kCapacity;
@@ -70,7 +70,7 @@ void TelemetryLogger::drain(DrainWriteFn writeFn, void *ctx)
     }
 
     if (m_guard)
-        m_guard->lock(std::chrono::milliseconds{0});
+        m_guard->lock(0);
 
     LightweightStringBuilder sb;
 
@@ -112,7 +112,7 @@ void TelemetryLogger::drain(DrainWriteFn writeFn, void *ctx)
 void TelemetryLogger::setVerbosity(Verbosity level)
 {
     if (m_guard)
-        m_guard->lock(std::chrono::milliseconds{0});
+        m_guard->lock(0);
     m_verbosity = level;
     if (m_guard)
         m_guard->unlock();
@@ -129,7 +129,7 @@ std::size_t TelemetryLogger::count() const
     // Non-mutating read; safe without lock in most cases, but lock if available
     // to prevent torn reads on some architectures.
     if (m_guard)
-        m_guard->lock(std::chrono::milliseconds{0});
+        m_guard->lock(0);
     std::size_t result = m_count;
     if (m_guard)
         m_guard->unlock();
@@ -139,7 +139,7 @@ std::size_t TelemetryLogger::count() const
 void TelemetryLogger::clear()
 {
     if (m_guard)
-        m_guard->lock(std::chrono::milliseconds{0});
+        m_guard->lock(0);
     m_head  = 0;
     m_tail  = 0;
     m_count = 0;

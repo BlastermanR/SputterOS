@@ -157,7 +157,6 @@ TEST_F(PerformanceMonitoringTest, Snapshot_QueueDepthReflectsActivity)
     // This tick samples queue with 3 items before ControlTask drains
     System<PerfMonCfg>::tick(0, 30000);
 
-    auto snap = System<PerfMonCfg>::snapshot();
     // The monitor should have recorded samples across multiple ticks
     EXPECT_GE(System<PerfMonCfg>::queueMonitor().sampleCount(), 3u);
 }

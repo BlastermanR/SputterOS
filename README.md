@@ -198,6 +198,7 @@ See the [Implementation Guide](docs/ImplementationGuide.md) for the full walkthr
 
 ## Documentation
 
+- [**API Reference**](docs/APIReference.md) — complete public API: every class, method signature, parameter, and thread-safety note
 - [System Architecture](docs/SystemArchitecture.md) — layers, components, data flow diagrams
 - [Implementation Guide](docs/ImplementationGuide.md) — step-by-step integration walkthrough
 - [Example Project Structure](docs/ExampleProjectStructure.md) — reference directory layout

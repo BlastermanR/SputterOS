@@ -56,7 +56,7 @@
 #include "LifecycleStateMachine.h"
 #include "MonitorTask.h"
 #include "SharedState.h"
-#include "TcpStreamServer.h"
+#include "common/hal/TcpStreamServer.h"
 #include "WorkerTask.h"
 
 #include "TimedMutexAdapter.h"

@@ -54,6 +54,9 @@ template <typename Cfg> class ScheduledControlTask : public IScheduledTask
      */
     SputterMicros periodUs() const override { return CfgControlBudgetUs<Cfg>::value; }
 
+    /** @brief Highest priority — safety-critical, must dispatch first. */
+    uint8_t schedulePriority() const override { return 0; }
+
     /**
      * @brief Initialize the user application.
      */

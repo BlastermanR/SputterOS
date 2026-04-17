@@ -40,6 +40,15 @@ namespace SputterOS
 using SputterMicros = uint64_t;
 
 /**
+ * @brief 32-bit millisecond duration used for timeouts and polling intervals.
+ *
+ * Replaces `std::chrono::milliseconds` in all kernel OSAL interfaces.
+ * Maximum representable duration: ~49.7 days — sufficient for any
+ * practical bounded-wait timeout.
+ */
+using SputterMillis = uint32_t;
+
+/**
  * @brief Platform-supplied microsecond clock function pointer.
  *
  * Injected via `SystemBuilder::setClockSource()`. Must return a

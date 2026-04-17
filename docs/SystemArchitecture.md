@@ -166,6 +166,7 @@ When `IUserApplication` is non-null:
 | `s_backgroundTaskCount` | `std::size_t` | Number of registered background tasks |
 | `s_bgRoundRobin` | `std::size_t` | Current background ring dispatch index |
 | `s_backgroundCoreId` | `std::size_t` | Core that runs Phase 2 background dispatch |
+| `s_lastDispatch[][]` | `SputterMicros[kCoreCount][kMaxTasksPerCore]` | Last dispatch timestamp per task per core; used by kernel-managed period skip (§2.2) |
 | `s_crunchDispatcher` | `CrunchDispatcher<Cfg>` | CRUNCH-mode core runtime; configured and driven by `run()` on CRUNCH cores |
 | `s_watchdogKickFn` | `WatchdogKickFn` | Platform watchdog kick callback stored once at build time and forwarded to `CrunchDispatcher` |
 | `s_safetyAbort` | `std::atomic<bool>` | Cross-core safety abort flag; set (release store) by `ControlTask::evaluateSafety()`, read (acquire load) by `CrunchDispatcher` each iteration |

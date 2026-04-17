@@ -27,6 +27,7 @@
 // ── Core Configuration ──────────────────────────────────────────────────────
 #include "sputteros/ConfigTraits.h"
 #include "sputteros/OpResult.h"
+#include "sputteros/Version.h"
 
 // ── Component Headers ───────────────────────────────────────────────────────
 #include "sputteros/Builder.h"

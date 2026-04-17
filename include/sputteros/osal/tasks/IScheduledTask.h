@@ -91,6 +91,33 @@ class IScheduledTask : public ITask
     virtual bool isIoPending() const { return false; }
 
     /**
+     * @brief Opt in to kernel-managed period dispatch.
+     *
+     * When this returns true the scheduler skips the task if its
+     * declared `periodUs()` has not elapsed since the last kernel-
+     * managed dispatch. This moves rate-limiting out of the task and
+     * into the scheduler, enabling proper cooperative fixed-priority
+     * scheduling (§2.2).
+     *
+     * The default is false (backward-compatible flat iteration).
+     *
+     * @return true to let the kernel enforce period-based dispatch.
+     */
+    virtual bool kernelManagedPeriod() const { return false; }
+
+    /**
+     * @brief Called by the kernel when this task's tick exceeded its declared WCET.
+     *
+     * Override this to implement task-specific overrun recovery
+     * (e.g., drop a sample, reduce fidelity, log a diagnostic).
+     * The default implementation is a no-op.
+     *
+     * @param actualUs  The measured tick duration in microseconds.
+     * @param budgetUs  The declared WCET (`declaredWcetUs()`).
+     */
+    virtual void onOverrun(SputterMicros /*actualUs*/, SputterMicros /*budgetUs*/) {}
+
+    /**
      * @brief Scheduling type marker — always true for scheduled tasks.
      */
     bool isScheduled() const final { return true; }

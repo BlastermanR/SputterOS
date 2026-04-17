@@ -59,9 +59,9 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <type_traits>
 
 #include "sputteros/osal/SputterTime.h"
+#include "sputteros/utils/TypeTraits.h"
 
 namespace SputterOS
 {
@@ -106,8 +106,8 @@ template <typename Cfg> struct ConfigValidator
     using Command = typename Cfg::Command;
     using CmdID   = typename Cfg::CmdID;
 
-    static_assert(std::is_enum<typename Cfg::State>::value, "Cfg::State must be an enum class.");
-    static_assert(std::is_enum<CmdID>::value, "Cfg::CmdID must be an enum class.");
+    static_assert(sput_is_enum<typename Cfg::State>::value, "Cfg::State must be an enum class.");
+    static_assert(sput_is_enum<CmdID>::value, "Cfg::CmdID must be an enum class.");
     static_assert(sizeof(Command) > 0, "Cfg::Command must be a valid struct.");
     static_assert(Cfg::kCoreCount >= 1, "Cfg::kCoreCount must be >= 1.");
     static_assert(Cfg::kQueueCapacity > 0, "Cfg::kQueueCapacity must be > 0.");
@@ -122,14 +122,14 @@ template <typename Cfg> struct ConfigValidator
 /**
  * @brief Compile-time check: true if T is (or derives from) IScheduledTask.
  */
-template <typename T> struct IsScheduledTask : std::is_base_of<IScheduledTask, T>
+template <typename T> struct IsScheduledTask : sput_is_base_of<IScheduledTask, T>
 {
 };
 
 /**
  * @brief Compile-time check: true if T is (or derives from) IBackgroundTask.
  */
-template <typename T> struct IsBackgroundTask : std::is_base_of<IBackgroundTask, T>
+template <typename T> struct IsBackgroundTask : sput_is_base_of<IBackgroundTask, T>
 {
 };
 
@@ -145,7 +145,7 @@ template <typename Cfg, typename = void> struct CfgMaxCommandsPerTick
     static constexpr int value = 8;
 };
 
-template <typename Cfg> struct CfgMaxCommandsPerTick<Cfg, std::void_t<decltype(Cfg::kMaxCommandsPerTick)>>
+template <typename Cfg> struct CfgMaxCommandsPerTick<Cfg, void_t<decltype(Cfg::kMaxCommandsPerTick)>>
 {
     static constexpr int value = Cfg::kMaxCommandsPerTick;
 };
@@ -158,7 +158,7 @@ template <typename Cfg, typename = void> struct CfgMaxValidCommandID
     static constexpr uint8_t value = 255;
 };
 
-template <typename Cfg> struct CfgMaxValidCommandID<Cfg, std::void_t<decltype(Cfg::kMaxValidCommandID)>>
+template <typename Cfg> struct CfgMaxValidCommandID<Cfg, void_t<decltype(Cfg::kMaxValidCommandID)>>
 {
     static constexpr uint8_t value = Cfg::kMaxValidCommandID;
 };
@@ -181,7 +181,7 @@ template <typename Cfg, typename = void> struct CfgControlBudgetUs
     static constexpr uint32_t value = 10000;
 };
 
-template <typename Cfg> struct CfgControlBudgetUs<Cfg, std::void_t<decltype(Cfg::kControlBudgetUs)>>
+template <typename Cfg> struct CfgControlBudgetUs<Cfg, void_t<decltype(Cfg::kControlBudgetUs)>>
 {
     static constexpr uint32_t value = Cfg::kControlBudgetUs;
 };
@@ -205,7 +205,7 @@ template <typename Cfg, typename = void> struct CfgErrorLogCapacity
     static constexpr std::size_t value = 32;
 };
 
-template <typename Cfg> struct CfgErrorLogCapacity<Cfg, std::void_t<decltype(Cfg::kErrorLogCapacity)>>
+template <typename Cfg> struct CfgErrorLogCapacity<Cfg, void_t<decltype(Cfg::kErrorLogCapacity)>>
 {
     static constexpr std::size_t value = Cfg::kErrorLogCapacity;
 };
@@ -220,7 +220,7 @@ template <typename Cfg, typename = void> struct CfgTelemetryLogCapacity
     static constexpr std::size_t value = 32;
 };
 
-template <typename Cfg> struct CfgTelemetryLogCapacity<Cfg, std::void_t<decltype(Cfg::kTelemetryLogCapacity)>>
+template <typename Cfg> struct CfgTelemetryLogCapacity<Cfg, void_t<decltype(Cfg::kTelemetryLogCapacity)>>
 {
     static constexpr std::size_t value = Cfg::kTelemetryLogCapacity;
 };
@@ -236,7 +236,7 @@ template <typename Cfg, typename = void> struct CfgMaxInterlockConditions
     static constexpr std::size_t value = 8;
 };
 
-template <typename Cfg> struct CfgMaxInterlockConditions<Cfg, std::void_t<decltype(Cfg::kMaxInterlockConditions)>>
+template <typename Cfg> struct CfgMaxInterlockConditions<Cfg, void_t<decltype(Cfg::kMaxInterlockConditions)>>
 {
     static constexpr std::size_t value = Cfg::kMaxInterlockConditions;
 };
@@ -251,7 +251,7 @@ template <typename Cfg, typename = void> struct CfgMaxLineLen
     static constexpr std::size_t value = 64;
 };
 
-template <typename Cfg> struct CfgMaxLineLen<Cfg, std::void_t<decltype(Cfg::kMaxLineLen)>>
+template <typename Cfg> struct CfgMaxLineLen<Cfg, void_t<decltype(Cfg::kMaxLineLen)>>
 {
     static constexpr std::size_t value = Cfg::kMaxLineLen;
 };
@@ -273,7 +273,7 @@ template <typename Cfg, typename = void> struct CfgMaxFramePayload
     static constexpr std::size_t value = 256;
 };
 
-template <typename Cfg> struct CfgMaxFramePayload<Cfg, std::void_t<decltype(Cfg::kMaxFramePayload)>>
+template <typename Cfg> struct CfgMaxFramePayload<Cfg, void_t<decltype(Cfg::kMaxFramePayload)>>
 {
     static constexpr std::size_t value = Cfg::kMaxFramePayload;
 };
@@ -293,7 +293,7 @@ template <typename Cfg, typename = void> struct CfgMaxSlotsPerCore
     static constexpr std::size_t value = 32;
 };
 
-template <typename Cfg> struct CfgMaxSlotsPerCore<Cfg, std::void_t<decltype(Cfg::kMaxSlotsPerCore)>>
+template <typename Cfg> struct CfgMaxSlotsPerCore<Cfg, void_t<decltype(Cfg::kMaxSlotsPerCore)>>
 {
     static constexpr std::size_t value = Cfg::kMaxSlotsPerCore;
 };
@@ -308,7 +308,7 @@ template <typename Cfg, typename = void> struct CfgMaxBackgroundTasks
     static constexpr std::size_t value = 16;
 };
 
-template <typename Cfg> struct CfgMaxBackgroundTasks<Cfg, std::void_t<decltype(Cfg::kMaxBackgroundTasks)>>
+template <typename Cfg> struct CfgMaxBackgroundTasks<Cfg, void_t<decltype(Cfg::kMaxBackgroundTasks)>>
 {
     static constexpr std::size_t value = Cfg::kMaxBackgroundTasks;
 };
@@ -323,7 +323,7 @@ template <typename Cfg, typename = void> struct CfgCommsBudgetUs
     static constexpr SputterMicros value = 1000;
 };
 
-template <typename Cfg> struct CfgCommsBudgetUs<Cfg, std::void_t<decltype(Cfg::kCommsBudgetUs)>>
+template <typename Cfg> struct CfgCommsBudgetUs<Cfg, void_t<decltype(Cfg::kCommsBudgetUs)>>
 {
     static constexpr SputterMicros value = Cfg::kCommsBudgetUs;
 };
@@ -338,7 +338,7 @@ template <typename Cfg, typename = void> struct CfgDiagsBudgetUs
     static constexpr SputterMicros value = 10000;
 };
 
-template <typename Cfg> struct CfgDiagsBudgetUs<Cfg, std::void_t<decltype(Cfg::kDiagsBudgetUs)>>
+template <typename Cfg> struct CfgDiagsBudgetUs<Cfg, void_t<decltype(Cfg::kDiagsBudgetUs)>>
 {
     static constexpr SputterMicros value = Cfg::kDiagsBudgetUs;
 };
@@ -353,7 +353,7 @@ template <typename Cfg, typename = void> struct CfgMinGapSliceUs
     static constexpr SputterMicros value = 10;
 };
 
-template <typename Cfg> struct CfgMinGapSliceUs<Cfg, std::void_t<decltype(Cfg::kMinGapSliceUs)>>
+template <typename Cfg> struct CfgMinGapSliceUs<Cfg, void_t<decltype(Cfg::kMinGapSliceUs)>>
 {
     static constexpr SputterMicros value = Cfg::kMinGapSliceUs;
 };
@@ -368,7 +368,7 @@ template <typename Cfg, typename = void> struct CfgMinSchedulePeriodUs
     static constexpr SputterMicros value = 10;
 };
 
-template <typename Cfg> struct CfgMinSchedulePeriodUs<Cfg, std::void_t<decltype(Cfg::kMinSchedulePeriodUs)>>
+template <typename Cfg> struct CfgMinSchedulePeriodUs<Cfg, void_t<decltype(Cfg::kMinSchedulePeriodUs)>>
 {
     static constexpr SputterMicros value = Cfg::kMinSchedulePeriodUs;
 };
@@ -384,7 +384,7 @@ template <typename Cfg, typename = void> struct CfgStrictWCET
     static constexpr bool value = false;
 };
 
-template <typename Cfg> struct CfgStrictWCET<Cfg, std::void_t<decltype(Cfg::kStrictWCET)>>
+template <typename Cfg> struct CfgStrictWCET<Cfg, void_t<decltype(Cfg::kStrictWCET)>>
 {
     static constexpr bool value = Cfg::kStrictWCET;
 };
@@ -400,7 +400,7 @@ template <typename Cfg, typename = void> struct CfgIsrContextBudgetUs
     static constexpr SputterMicros value[2] = {0, 0};
 };
 
-template <typename Cfg> struct CfgIsrContextBudgetUs<Cfg, std::void_t<decltype(Cfg::kIsrContextBudgetUs[0])>>
+template <typename Cfg> struct CfgIsrContextBudgetUs<Cfg, void_t<decltype(Cfg::kIsrContextBudgetUs[0])>>
 {
     static constexpr auto &value = Cfg::kIsrContextBudgetUs;
 };
@@ -424,7 +424,7 @@ template <typename Cfg, typename = void> struct CfgMetricsWindowUs
     static constexpr SputterMicros value = 60'000'000; // 60 seconds
 };
 
-template <typename Cfg> struct CfgMetricsWindowUs<Cfg, std::void_t<decltype(Cfg::kMetricsWindowUs)>>
+template <typename Cfg> struct CfgMetricsWindowUs<Cfg, void_t<decltype(Cfg::kMetricsWindowUs)>>
 {
     static constexpr SputterMicros value = Cfg::kMetricsWindowUs;
 };
@@ -441,7 +441,7 @@ template <typename Cfg, typename = void> struct CfgCrunchMaxOverruns
     static constexpr uint32_t value = 10;
 };
 
-template <typename Cfg> struct CfgCrunchMaxOverruns<Cfg, std::void_t<decltype(Cfg::kCrunchMaxOverruns)>>
+template <typename Cfg> struct CfgCrunchMaxOverruns<Cfg, void_t<decltype(Cfg::kCrunchMaxOverruns)>>
 {
     static constexpr uint32_t value = Cfg::kCrunchMaxOverruns;
 };

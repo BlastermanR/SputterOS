@@ -65,11 +65,10 @@
 #include "sputteros/utils/logging/TelemetryLogger.h"
 
 #include "sputteros/utils/PlatformAssert.h"
+#include "sputteros/utils/InPlaceStorage.h"
+#include "sputteros/utils/TypeTraits.h"
 
-#include <chrono>
 #include <cstddef>
-#include <optional>
-#include <type_traits>
 
 namespace SputterOS
 {
@@ -91,14 +90,14 @@ struct NoOpMultiCoreSync
     void setError(std::size_t, const char *) {}
     void setShutdown(std::size_t) {}
 
-    bool startupBarrier(std::size_t, std::chrono::milliseconds,
-                        std::chrono::milliseconds = std::chrono::milliseconds{1})
+    bool startupBarrier(std::size_t, SputterMillis,
+                        SputterMillis = 1)
     {
         return true;
     }
 
-    bool shutdownBarrier(std::size_t, std::chrono::milliseconds,
-                         std::chrono::milliseconds = std::chrono::milliseconds{1})
+    bool shutdownBarrier(std::size_t, SputterMillis,
+                         SputterMillis = 1)
     {
         return true;
     }
@@ -147,7 +146,7 @@ template <typename Cfg> class System
     /**
      * @brief Conditional MultiCoreSync type.
      */
-    using SyncType = std::conditional_t<kMultiCore, MultiCoreSync<kCoreCount>, NoOpMultiCoreSync>;
+    using SyncType = sput_conditional_t<kMultiCore, MultiCoreSync<kCoreCount>, NoOpMultiCoreSync>;
 
     // =====================================================================
     // Per-Core Task Storage
@@ -217,7 +216,7 @@ template <typename Cfg> class System
      * @brief Initialize all tasks on a specific core.
      *
      * Calls `ITask::init()` on every task registered to `coreId`,
-     * in registration order.
+     * in priority order (as sorted by `SystemBuilder::build()`).
      *
      * @param coreId: Zero-based core identifier.
      */
@@ -294,28 +293,76 @@ template <typename Cfg> class System
 
         s_utilTracker[coreId].recordTickStart(systemTimeMicros);
 
-        // Phase 1: Scheduled tasks
+        // Phase 1: Scheduled tasks — priority-ordered, period-aware dispatch.
+        // Tasks are pre-sorted by effective priority at build time (§2.3).
+        // The kernel skips a task if its declared period has not elapsed
+        // since its last dispatch (§2.2), moving rate-limiting out of
+        // individual tasks and into the scheduler.
         SputterMicros busyAccum = 0;
         for (std::size_t t = 0; t < s_cores[coreId].taskCount; ++t)
         {
             ITask *tsk = s_cores[coreId].tasks[t];
-            if (tsk)
+            if (!tsk)
+                continue;
+
+            // Period-aware skip: only dispatch scheduled tasks whose
+            // period has elapsed since their last kernel-managed dispatch.
+            // Only tasks that opt in via kernelManagedPeriod() are skipped;
+            // all other tasks dispatch every tick (backward-compatible).
+            if (tsk->isScheduled())
             {
-                tsk->timer().start();
-                tsk->tick(systemTimeMicros);
-                tsk->timer().stop();
-                busyAccum += tsk->timer().lastDuration();
+                auto *scheduled = static_cast<IScheduledTask *>(tsk);
+                if (scheduled->kernelManagedPeriod())
+                {
+                    SputterMicros period = scheduled->periodUs();
+                    if (period > 0)
+                    {
+                        SputterMicros last = s_lastDispatch[coreId][t];
+                        if (last != 0 && (systemTimeMicros - last) < period)
+                            continue;
+                        s_lastDispatch[coreId][t] = systemTimeMicros;
+                    }
+                }
+            }
+
+            tsk->timer().start();
+            tsk->tick(systemTimeMicros);
+            tsk->timer().stop();
+            busyAccum += tsk->timer().lastDuration();
+
+            // Deadline miss detection (§2.4): if the task declares a WCET
+            // and the measured duration exceeded it, log the overrun and
+            // notify the task via onOverrun() for task-specific recovery.
+            if (tsk->isScheduled())
+            {
+                auto *sched = static_cast<IScheduledTask *>(tsk);
+                SputterMicros wcet = sched->declaredWcetUs();
+                SputterMicros actual = tsk->timer().lastDuration();
+                if (wcet > 0 && actual > wcet)
+                {
+                    tsk->timer().recordDeadlineMiss();
+                    s_errorLogger.log(ErrorLogger::ErrorCode::DEADLINE_MISS,
+                                      systemTimeMicros,
+                                      static_cast<float>(actual));
+                    sched->onOverrun(actual, wcet);
+                }
             }
         }
 
-        // Phase 2: Background tasks — round-robin, budget-gated after first dispatch.
-        // At least one background task always dispatches per tick (the round-robin
-        // head) to ensure DiagnosticsTask can always monitor for budget violations.
-        // Additional tasks are budget-capped by the remaining gap time.
+        // Phase 2: Background tasks — round-robin, budget-gated gap-time ring.
+        // Budget ceiling is the actual remaining gap (total budget minus
+        // Phase 1 busy time). At least one background task always dispatches
+        // per tick (the round-robin head) to ensure DiagnosticsTask can
+        // always monitor for budget violations. Additional tasks are
+        // budget-capped by the remaining gap time.
         if (coreId == s_backgroundCoreId && s_backgroundTaskCount > 0)
         {
             SputterMicros gapBudget = CfgControlBudgetUs<Cfg>::value;
-            SputterMicros used      = busyAccum;
+            if (gapBudget > busyAccum)
+                gapBudget -= busyAccum;
+            else
+                gapBudget = 0;
+            SputterMicros used = 0;
 
             for (std::size_t i = 0; i < s_backgroundTaskCount; ++i)
             {
@@ -339,7 +386,7 @@ template <typename Cfg> class System
                 }
             }
 
-            busyAccum = used;
+            busyAccum += used;
         }
 
         SputterMicros tickEndTime = s_timer.nowMicros();
@@ -396,7 +443,7 @@ template <typename Cfg> class System
         }
 
         // Phase 3: Wait for all cores to be ready
-        s_sync.startupBarrier(coreId, std::chrono::milliseconds{2000});
+        s_sync.startupBarrier(coreId, 2000);
 
         // Phase 4: Dispatch based on core mode
         auto &core = s_cores[coreId];
@@ -427,7 +474,7 @@ template <typename Cfg> class System
         }
 
         // Phase 6: Multi-core shutdown barrier
-        s_sync.shutdownBarrier(coreId, std::chrono::milliseconds{2000});
+        s_sync.shutdownBarrier(coreId, 2000);
     }
 
     // =====================================================================
@@ -676,20 +723,24 @@ template <typename Cfg> class System
      */
     static void clearSafetyAbort() { s_safetyAbort.store(false, std::memory_order_relaxed); }
 
-  private:
-    friend class SystemBuilder<Cfg>;
-    friend class Kernel::CrunchDispatcher<Cfg>;
-    friend struct Kernel::KernelTestAccess;
-
     // =====================================================================
-    // Test-Only Reset (friend access via KernelTestAccess)
+    // Reset / Soft-Restart
     // =====================================================================
 
     /**
-     * @brief Reset all static state to allow re-use in test fixtures.
+     * @brief Full reset of all static state — returns to UNCONFIGURED.
      *
-     * Clears task lists, destroys kernel tasks, resets built flag.
-     * Only accessible via `KernelTestAccess`.
+     * Clears task lists, destroys kernel tasks, resets the built flag,
+     * and returns the kernel to `UNCONFIGURED` state. After calling
+     * `reset()`, the system must be re-built via `SystemBuilder::build()`
+     * before `init()` or `tick()` can be called again.
+     *
+     * Intended for test isolation and fault-recovery scenarios where the
+     * entire system must be torn down and reconstructed.
+     *
+     * @warning Must be called only when no core is actively ticking.
+     *          Calling from one core while another is in `run()` is
+     *          undefined behavior.
      */
     static void reset()
     {
@@ -709,6 +760,10 @@ template <typename Cfg> class System
         {
             s_cores[c]    = CoreData{};
             s_lastTime[c] = 0;
+            for (std::size_t t = 0; t < kMaxTasksPerCore; ++t)
+            {
+                s_lastDispatch[c][t] = 0;
+            }
         }
         for (std::size_t t = 0; t < kMaxTotalTasks; ++t)
         {
@@ -738,6 +793,11 @@ template <typename Cfg> class System
         s_safetyAbort.store(false, std::memory_order_relaxed);
         s_watchdogKickFn = nullptr;
     }
+
+  private:
+    friend class SystemBuilder<Cfg>;
+    friend class Kernel::CrunchDispatcher<Cfg>;
+    friend struct Kernel::KernelTestAccess;
 
     // =====================================================================
     // Run-Loop Helpers (private)
@@ -795,9 +855,9 @@ template <typename Cfg> class System
     // Kernel Tasks (emplaced by SystemBuilder::build())
     // =====================================================================
 
-    inline static std::optional<Kernel::ScheduledControlTask<Cfg>> s_controlTask{};
-    inline static std::optional<Kernel::ScheduledCommsTask<Cfg>>   s_commsTask{};
-    inline static std::optional<Kernel::BackgroundDiagnosticsTask> s_diagsTask{};
+    inline static InPlaceStorage<Kernel::ScheduledControlTask<Cfg>> s_controlTask{};
+    inline static InPlaceStorage<Kernel::ScheduledCommsTask<Cfg>>   s_commsTask{};
+    inline static InPlaceStorage<Kernel::BackgroundDiagnosticsTask> s_diagsTask{};
 
     // =====================================================================
     // Background Task Ring
@@ -815,6 +875,13 @@ template <typename Cfg> class System
     inline static CoreData    s_cores[kCoreCount]{};
     inline static ITask      *s_allTasks[kMaxTotalTasks]{};
     inline static std::size_t s_allTaskCount{0};
+
+    // =====================================================================
+    // Period-Aware Dispatch State (§2.2)
+    // =====================================================================
+
+    /** @brief Last kernel-managed dispatch time per task slot per core. */
+    inline static SputterMicros s_lastDispatch[kCoreCount][kMaxTasksPerCore]{};
 
     // =====================================================================
     // State

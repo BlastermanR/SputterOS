@@ -28,7 +28,7 @@ target_include_directories(lifecycle_osNative PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal_impl    # LifecycleHAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/osal_impl   # LifecycleOSAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include     # LifecycleStateMachine.h, tasks
-    ${CMAKE_CURRENT_SOURCE_DIR}/../common/hal  # TcpStreamServer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/..           # common/hal/, common/osal/
 )
 
 target_link_libraries(lifecycle_osNative PRIVATE

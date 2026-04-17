@@ -349,7 +349,7 @@ TEST_F(TelemetryLoggerTest, SequentialDrains_SecondDrainWritesNothing)
 class CountingMutex : public SputterOS::IMutex
 {
   public:
-    bool lock(std::chrono::milliseconds /*timeout*/) override
+    bool lock(SputterOS::SputterMillis /*timeout*/) override
     {
         ++lockCount;
         return true;

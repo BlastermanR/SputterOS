@@ -37,7 +37,7 @@
 #include "HeartbeatOSAL.h"
 #include "HeartbeatStateMachine.h"
 #include "PulseTask.h"
-#include "TcpStreamServer.h"
+#include "common/hal/TcpStreamServer.h"
 
 #include "sputteros/builder/SystemBuilder.h"
 #include "sputteros/kernel/System.h"

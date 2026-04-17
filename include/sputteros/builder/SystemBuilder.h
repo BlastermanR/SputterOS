@@ -517,6 +517,14 @@ template <typename Cfg> class SystemBuilder
             }
         }
 
+        // --- Priority-ordered dispatch (§2.3) ---
+        // Sort each core's task list by effective priority.  Tasks with
+        // schedulePriority() == 0xFF get auto-assigned RMS priority
+        // (shorter period → lower numeric value → higher precedence).
+        // Kernel tasks (ControlTask, CommsTask) declare priority 0
+        // via their overrides, so they naturally sort first.
+        sortTasksByPriority();
+
         // --- Check that at least one core has tasks ---
         bool anyActive = false;
         for (std::size_t c = 0; c < kCoreCount; ++c)
@@ -818,6 +826,74 @@ template <typename Cfg> class SystemBuilder
             }
         }
         return {true, nullptr};
+    }
+
+    // -----------------------------------------------------------------------
+    // Priority-ordered dispatch (§2.3)
+    // -----------------------------------------------------------------------
+
+    /**
+     * @brief Compute effective priority for a task.
+     *
+     * Scheduled tasks with `schedulePriority() == 0xFF` (the default)
+     * get auto-assigned RMS priority: shorter period → lower numeric
+     * value → higher precedence. The mapping reserves 0 for kernel
+     * tasks (which explicitly override `schedulePriority()`) and maps
+     * user periods into the range [1, 0xFE].
+     *
+     * Non-scheduled tasks receive priority 0xFE (lowest).
+     */
+    static uint8_t effectivePriority(ITask *tsk)
+    {
+        if (!tsk || !tsk->isScheduled())
+            return 0xFE;
+
+        auto *sched = static_cast<IScheduledTask *>(tsk);
+        uint8_t p = sched->schedulePriority();
+        if (p != 0xFF)
+            return p; // explicit override
+
+        // RMS auto-assign: shorter period → lower value
+        SputterMicros period = sched->periodUs();
+        if (period == 0)
+            return 0xFE;
+
+        // Map microsecond periods to a single byte.  Kernel tasks have
+        // priorities 0–1 (explicit), so we map into [2, 0xFD].
+        // Clamp periods that exceed 10s to the lowest auto band.
+        if (period <= 100)       return 2;
+        if (period <= 1'000)     return 10;
+        if (period <= 10'000)    return 20;
+        if (period <= 100'000)   return 40;
+        if (period <= 1'000'000) return 80;
+        return 0xA0;
+    }
+
+    /**
+     * @brief Sort each core's task array by effective priority (ascending).
+     *
+     * Uses heap-free insertion sort (O(n²) for n ≤ kMaxTasksPerCore).
+     * Stable: tasks at the same priority retain their registration order.
+     */
+    void sortTasksByPriority()
+    {
+        for (std::size_t c = 0; c < kCoreCount; ++c)
+        {
+            auto &core = S::s_cores[c];
+            // Insertion sort — stable, zero-allocation
+            for (std::size_t i = 1; i < core.taskCount; ++i)
+            {
+                ITask  *key    = core.tasks[i];
+                uint8_t keyPri = effectivePriority(key);
+                std::size_t j  = i;
+                while (j > 0 && effectivePriority(core.tasks[j - 1]) > keyPri)
+                {
+                    core.tasks[j] = core.tasks[j - 1];
+                    --j;
+                }
+                core.tasks[j] = key;
+            }
+        }
     }
 
     // -----------------------------------------------------------------------

@@ -50,7 +50,7 @@
  *       to a no-op. Override via the constructor argument for bare-metal
  *       tight-loop mitigation (e.g., calling `tight_loop_contents()`).
  *
- * @note All timeout / interval parameters use `std::chrono::milliseconds`.
+ * @note All timeout / interval parameters use `SputterMillis` (milliseconds).
  *
  * @author Ryan Massie (rmassie)
  * @date 4/7/2026
@@ -60,8 +60,8 @@
 #define SPUTTEROS_OSAL_MULTICORE_SYNC_H
 
 #include "sputteros/osal/sync/ICoreErrorHandler.h"
+#include "sputteros/osal/SputterTime.h"
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 
@@ -180,13 +180,13 @@ template <std::size_t N_CORES> class MultiCoreSync
      * @return true  if all cores reached READY within the timeout.
      * @return false if the barrier timed out or any core is in ERROR.
      */
-    bool startupBarrier(std::size_t coreId, std::chrono::milliseconds timeout,
-                        std::chrono::milliseconds pollInterval = std::chrono::milliseconds{1})
+    bool startupBarrier(std::size_t coreId, SputterMillis timeoutMs,
+                        SputterMillis pollIntervalMs = 1)
     {
         setReady(coreId);
 
-        auto elapsed = std::chrono::milliseconds{0};
-        while (elapsed < timeout)
+        SputterMillis elapsed = 0;
+        while (elapsed < timeoutMs)
         {
             if (anyError())
             {
@@ -197,8 +197,8 @@ template <std::size_t N_CORES> class MultiCoreSync
             {
                 return true;
             }
-            pollDelay(pollInterval);
-            elapsed += pollInterval;
+            pollDelay(pollIntervalMs);
+            elapsed += pollIntervalMs;
         }
 
         setError(coreId, "Startup barrier timeout");
@@ -218,20 +218,20 @@ template <std::size_t N_CORES> class MultiCoreSync
      * @return true  if all cores reached SHUTDOWN/ERROR within timeout.
      * @return false if the barrier timed out.
      */
-    bool shutdownBarrier(std::size_t coreId, std::chrono::milliseconds timeout,
-                         std::chrono::milliseconds pollInterval = std::chrono::milliseconds{1})
+    bool shutdownBarrier(std::size_t coreId, SputterMillis timeoutMs,
+                         SputterMillis pollIntervalMs = 1)
     {
         setShutdown(coreId);
 
-        auto elapsed = std::chrono::milliseconds{0};
-        while (elapsed < timeout)
+        SputterMillis elapsed = 0;
+        while (elapsed < timeoutMs)
         {
             if (allTerminated())
             {
                 return true;
             }
-            pollDelay(pollInterval);
-            elapsed += pollInterval;
+            pollDelay(pollIntervalMs);
+            elapsed += pollIntervalMs;
         }
         return false;
     }
@@ -252,19 +252,19 @@ template <std::size_t N_CORES> class MultiCoreSync
      * Useful for ordered initialization: Core 1 can wait for Core 0 to reach
      * READY before touching shared objects initialized by Core 0.
      */
-    bool waitForCore(std::size_t peerId, CoreState targetState, std::chrono::milliseconds timeout,
-                     std::chrono::milliseconds pollInterval = std::chrono::milliseconds{1})
+    bool waitForCore(std::size_t peerId, CoreState targetState, SputterMillis timeoutMs,
+                     SputterMillis pollIntervalMs = 1)
     {
-        auto elapsed = std::chrono::milliseconds{0};
-        while (elapsed < timeout)
+        SputterMillis elapsed = 0;
+        while (elapsed < timeoutMs)
         {
             CoreState current = m_states[peerId].load(std::memory_order_acquire);
             if (static_cast<uint8_t>(current) >= static_cast<uint8_t>(targetState))
             {
                 return true;
             }
-            pollDelay(pollInterval);
-            elapsed += pollInterval;
+            pollDelay(pollIntervalMs);
+            elapsed += pollIntervalMs;
         }
         return false;
     }
@@ -348,11 +348,11 @@ template <std::size_t N_CORES> class MultiCoreSync
      *       called by each core's own loop (in main.cpp / Core1Main.cpp) —
      *       this delay hook does not need to replicate it.
      */
-    static void pollDelay(std::chrono::milliseconds ms)
+    static void pollDelay(SputterMillis ms)
     {
         /* Portable busy-wait: ~1 ms at typical Cortex-M33 frequencies.
          * Replace with a HAL sleep if a timer is available at this stage. */
-        volatile uint32_t cycles = static_cast<uint32_t>(ms.count()) * 125000U; // ~125 MHz default clock
+        volatile uint32_t cycles = ms * 125000U; // ~125 MHz default clock
         while (cycles--)
         {
         }

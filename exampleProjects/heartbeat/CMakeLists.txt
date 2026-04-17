@@ -26,7 +26,7 @@ target_include_directories(heartbeat_osNative PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal_impl    # HeartbeatHAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/osal_impl   # HeartbeatOSAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include    # HeartbeatStateMachine.h, PulseTask.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/../common/hal  # TcpStreamServer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/..          # common/hal/, common/osal/
 )
 
 target_link_libraries(heartbeat_osNative PRIVATE

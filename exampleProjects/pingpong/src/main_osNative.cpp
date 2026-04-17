@@ -63,7 +63,7 @@
 #include "PingTask.h"
 #include "PongTask.h"
 #include "SharedCounter.h"
-#include "TcpStreamServer.h"
+#include "common/hal/TcpStreamServer.h"
 
 #include "TimedMutexAdapter.h"
 #include "sputteros/builder/SystemBuilder.h"

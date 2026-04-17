@@ -52,10 +52,10 @@ TEST_F(MultiCoreSyncTest, StartupBarrierSucceeds)
     bool core0Ok = false;
     bool core1Ok = false;
 
-    std::thread core1Thread([&]() { core1Ok = sync.startupBarrier(1, std::chrono::milliseconds{2000}); });
+    std::thread core1Thread([&]() { core1Ok = sync.startupBarrier(1, 2000); });
 
     // Core 0 enters the barrier — with both cores entering, they should both proceed.
-    core0Ok = sync.startupBarrier(0, std::chrono::milliseconds{2000});
+    core0Ok = sync.startupBarrier(0, 2000);
 
     core1Thread.join();
 
@@ -69,7 +69,7 @@ TEST_F(MultiCoreSyncTest, StartupBarrierTimeoutSetsError)
 
     // Only Core 0 enters the barrier — Core 1 never arrives.
     // Use a very short timeout to avoid blocking the test suite.
-    bool core0Ok = sync.startupBarrier(0, std::chrono::milliseconds{5}, std::chrono::milliseconds{1});
+    bool core0Ok = sync.startupBarrier(0, 5, 1);
 
     EXPECT_FALSE(core0Ok) << "Should timeout when peer never arrives";
     EXPECT_EQ(sync.coreState(0), CoreState::ERROR);
@@ -88,9 +88,9 @@ TEST_F(MultiCoreSyncTest, ShutdownBarrierSucceeds)
     bool core0ShutOk = false;
     bool core1ShutOk = false;
 
-    std::thread core1Thread([&]() { core1ShutOk = sync.shutdownBarrier(1, std::chrono::milliseconds{2000}); });
+    std::thread core1Thread([&]() { core1ShutOk = sync.shutdownBarrier(1, 2000); });
 
-    core0ShutOk = sync.shutdownBarrier(0, std::chrono::milliseconds{2000});
+    core0ShutOk = sync.shutdownBarrier(0, 2000);
 
     core1Thread.join();
 

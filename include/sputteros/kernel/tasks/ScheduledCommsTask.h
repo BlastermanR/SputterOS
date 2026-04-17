@@ -70,6 +70,9 @@ template <typename Cfg> class ScheduledCommsTask : public IScheduledTask, public
      */
     SputterMicros periodUs() const override { return CfgCommsBudgetUs<Cfg>::value; }
 
+    /** @brief Second-highest priority — communications must be responsive. */
+    uint8_t schedulePriority() const override { return 1; }
+
     /**
      * @brief Initialize the stream reader, wire up the protocol handler, and reset state.
      */

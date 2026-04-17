@@ -18,7 +18,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
+#include "sputteros/utils/MemUtils.h"
 
 namespace SputterOS
 {
@@ -69,7 +69,7 @@ inline std::size_t serializeNack(uint8_t cmdId, uint8_t targetDevice, float valu
     }
     outBuf[0] = cmdId;
     outBuf[1] = targetDevice;
-    std::memcpy(&outBuf[2], &value, sizeof(float));
+    sput_memcpy(&outBuf[2], &value, sizeof(float));
     return 6;
 }
 
@@ -120,7 +120,7 @@ inline std::size_t serializeCommand(uint8_t cmdId, uint8_t targetDevice, float v
     }
     outBuf[0] = cmdId;
     outBuf[1] = targetDevice;
-    std::memcpy(&outBuf[2], &value, sizeof(float));
+    sput_memcpy(&outBuf[2], &value, sizeof(float));
     return 6;
 }
 
@@ -139,7 +139,7 @@ inline std::size_t serializeData(const uint8_t *data, std::size_t dataLen, uint8
     {
         return 0;
     }
-    std::memcpy(outBuf, data, dataLen);
+    sput_memcpy(outBuf, data, dataLen);
     return dataLen;
 }
 
@@ -160,14 +160,14 @@ inline std::size_t serializeLog(uint8_t level, const char *text, uint8_t *outBuf
     {
         return 0;
     }
-    const std::size_t textLen = std::strlen(text);
+    const std::size_t textLen = sput_strlen(text);
     const std::size_t total   = 1 + textLen;
     if (outCap < total)
     {
         return 0;
     }
     outBuf[0] = level;
-    std::memcpy(&outBuf[1], text, textLen);
+    sput_memcpy(&outBuf[1], text, textLen);
     return total;
 }
 
@@ -189,25 +189,25 @@ inline void writeU8(uint8_t *&p, uint8_t v) { *p++ = v; }
 
 inline void writeU16(uint8_t *&p, uint16_t v)
 {
-    std::memcpy(p, &v, 2);
+    sput_memcpy(p, &v, 2);
     p += 2;
 }
 
 inline void writeU32(uint8_t *&p, uint32_t v)
 {
-    std::memcpy(p, &v, 4);
+    sput_memcpy(p, &v, 4);
     p += 4;
 }
 
 inline void writeU64(uint8_t *&p, uint64_t v)
 {
-    std::memcpy(p, &v, 8);
+    sput_memcpy(p, &v, 8);
     p += 8;
 }
 
 inline void writeF32(uint8_t *&p, float v)
 {
-    std::memcpy(p, &v, 4);
+    sput_memcpy(p, &v, 4);
     p += 4;
 }
 

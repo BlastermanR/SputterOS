@@ -24,20 +24,22 @@ Documents the implemented scheduling model: task type hierarchy, dispatch algori
 
 ## 1. Overview
 
-SputterOS dispatches tasks through a **flat-loop cooperative scheduler**. The primary entry point is `System<Cfg>::run(coreId)`, which internalises the full lifecycle: init → startup barrier → tick loop → shutdown. Internally, each iteration calls `System<Cfg>::tick(coreId, now)` which iterates all tasks registered on that core and calls `task->tick(now)` on each in declaration order. Timer instrumentation wraps every dispatch for post-hoc observability.
+SputterOS dispatches tasks through a **flat-loop cooperative scheduler**. The primary entry point is `System<Cfg>::run(coreId)`, which internalises the full lifecycle: init → startup barrier → tick loop → shutdown. Internally, each iteration calls `System<Cfg>::tick(coreId, now)` which iterates all tasks registered on that core in priority order (sorted at build time by `effectivePriority()`) and calls `task->tick(now)` on each. Timer instrumentation wraps every dispatch for post-hoc observability.
 
 The `run()` method exits when any user-registered stop condition fires (`StopConditionFn` — registered via `SystemBuilder::addStopCondition()`) or the kernel leaves an active state. Multiple stop conditions are OR'd.
 
 For advanced use, `tick()` remains public for test harnesses and custom run loops, but production code should use `run()`.
 
-Scheduling behaviour — *which* task does work on a given tick — is **task-internal**. Each `IScheduledTask` subclass implements its own period check (`now - m_lastTick >= periodUs`) and returns early when the period has not elapsed. The kernel loop is oblivious to whether a task did real work or returned immediately; it always calls `tick()` and records the duration.
+Scheduling behaviour — *which* task does work on a given tick — is **task-internal by default**. Each `IScheduledTask` subclass can implement its own period check (`now - m_lastTick >= periodUs`) and return early when the period has not elapsed. Alternatively, tasks can opt in to **kernel-managed period dispatch** by overriding `kernelManagedPeriod()` to return `true`, which delegates rate-limiting to the scheduler — the kernel skips dispatch entirely when the task's period has not elapsed (§2.2).
+
+Tasks are pre-sorted by effective priority at build time (§2.3). Kernel tasks have explicit priorities (`ScheduledControlTask` = 0, `ScheduledCommsTask` = 1); user tasks with the default `schedulePriority()` of 0xFF receive auto-assigned Rate-Monotonic (RMS) priority — shorter period → higher priority.
 
 This model gives:
 
-- **Deterministic loop time** — no dynamic dispatch decisions, no sorting, no priority queuing at the kernel level.
+- **Deterministic loop time** — tasks are pre-sorted by static priority at build time; no runtime priority queue or dynamic reordering. Period-aware skip logic (§2.2) may reduce per-tick dispatch count.
 - **Zero heap** — all state lives in `inline static` members of `System<Cfg>`.
-- **Task autonomy** — individual tasks declare their own periods and manage their own rate-limiting, keeping the kernel loop simple and auditable.
-- **Observability** — `TaskTimer` records execution time for every task on every tick regardless of whether the task did work.
+- **Task autonomy** — tasks may manage their own rate-limiting (default) or opt in to kernel-managed period dispatch via `kernelManagedPeriod()`.
+- **Observability** — `TaskTimer` records execution time for every dispatched task. Tasks skipped by kernel-managed period logic do not generate timer samples for that tick.
 
 ---
 
@@ -63,19 +65,24 @@ public:
     virtual SputterMicros declaredWcetUs() const { return 0; }   // 0 = auto-profile
     virtual uint8_t       schedulePriority() const { return 0xFF; } // 0xFF = RMS auto
     virtual bool          isIoPending() const { return false; }
+    virtual bool          kernelManagedPeriod() const { return false; } // opt-in §2.2
+    virtual void          onOverrun(SputterMicros actualUs,             // §2.4
+                                    SputterMicros budgetUs) {}
     bool isScheduled()  const final { return true; }
     bool isBackground() const final { return false; }
 };
 ```
 
-Subclasses must implement `periodUs()` and the `ITask` interface (`init()`, `tick()`). The task is responsible for enforcing its own period inside `tick()`.
+Subclasses must implement `periodUs()` and the `ITask` interface (`init()`, `tick()`). By default, the task is responsible for enforcing its own period inside `tick()`. Tasks that override `kernelManagedPeriod()` to return `true` delegate period enforcement to the kernel scheduler.
 
 | Method | Purpose |
 |--------|---------|
-| `periodUs()` | Task's nominal activation interval in µs. Used by `SystemBuilder` for period-floor validation. Documented to calling code and diagnostics. |
+| `periodUs()` | Task's nominal activation interval in µs. Used by `SystemBuilder` for period-floor validation and by the kernel for period-aware skip logic (§2.2) when `kernelManagedPeriod()` is true. |
 | `declaredWcetUs()` | User-declared worst-case execution time. Used by `BackgroundDiagnosticsTask` overrun reporting. Default 0 = auto-profile from observed `TaskTimer` data. |
-| `schedulePriority()` | Static priority hint (lower = higher priority). Unused by current flat-loop scheduler; reserved for future Cruncher integration. |
+| `schedulePriority()` | Static priority for build-time dispatch ordering. Lower = higher priority. 0xFF triggers auto-RMS assignment (shorter period → higher priority). Kernel tasks override: `ScheduledControlTask` = 0, `ScheduledCommsTask` = 1. |
 | `isIoPending()` | Task signals it yielded early for async I/O. Polled by some example projects; not yet gated by `System::tick()`. |
+| `kernelManagedPeriod()` | Opt in to kernel-managed period dispatch. When true, the scheduler skips the task if `periodUs()` has not elapsed since last dispatch (§2.2). Default false (backward-compatible self-rate-limiting). |
+| `onOverrun(actualUs, budgetUs)` | Called by the kernel when `tick()` duration exceeds `declaredWcetUs()`. Override for task-specific recovery (drop sample, reduce fidelity). Default no-op (§2.4). |
 | `onSuspend()` / `onResume()` | Optional lifecycle callbacks. Called if the kernel suspends / resumes task execution. Currently no-op. |
 
 ### 2.2 IBackgroundTask
@@ -125,8 +132,8 @@ Registered via `CoreBuilder::setCrunchTask(&task)`. ICrunchTask **cannot** be pl
 
 | Task | Base | Dispatch | Role |
 |------|------|----------|------|
-| `ScheduledControlTask<Cfg>` | `IScheduledTask` | Core 0, slot 0 | Safety eval → command drain → user app tick |
-| `ScheduledCommsTask<Cfg>` | `IScheduledTask` | Core 1 slot 0 (or Core 0 when Core 1 is CRUNCH, or Core 0 single-core) | Serial ingestion → CLI parse → queue push |
+| `ScheduledControlTask<Cfg>` | `IScheduledTask` | Core 0, priority 0 (highest) | Safety eval → command drain → user app tick |
+| `ScheduledCommsTask<Cfg>` | `IScheduledTask` | Core 1 (or Core 0 when Core 1 is CRUNCH, or Core 0 single-core), priority 1 | Serial ingestion → CLI parse → queue push |
 | `BackgroundDiagnosticsTask` | `IBackgroundTask` | Background ring — gap-time dispatch | Watchdog kick, timer scan, memory profile |
 
 `BackgroundDiagnosticsTask` is registered exclusively in the background task ring and dispatched by Phase 2 of `System::tick()` (see §3.1). It does **not** appear in any core's scheduled task list.
@@ -154,25 +161,49 @@ static void tick(std::size_t coreId, SputterMicros now)
     // 3. Record tick start for utilization tracking
     s_utilTracker[coreId].recordTickStart(now);
 
-    // 4. Phase 1: Flat scheduled-task loop — all tasks on this core, in declaration order
+    // 4. Phase 1: Scheduled tasks — priority-ordered, period-aware dispatch
+    //    Tasks are pre-sorted by effectivePriority() at build time (§2.3).
     SputterMicros busyAccum = 0;
     for (std::size_t t = 0; t < s_cores[coreId].taskCount; ++t)
     {
         ITask *tsk = s_cores[coreId].tasks[t];
-        if (tsk)
+        if (!tsk) continue;
+
+        // Period-aware skip (§2.2): only for tasks opting in via
+        // kernelManagedPeriod(). Others dispatch every tick.
+        if (tsk->isScheduled())
         {
-            tsk->timer().start();
-            tsk->tick(now);
-            tsk->timer().stop();
-            busyAccum += tsk->timer().lastDuration();
+            auto *scheduled = static_cast<IScheduledTask *>(tsk);
+            if (scheduled->kernelManagedPeriod())
+            {
+                SputterMicros period = scheduled->periodUs();
+                if (period > 0)
+                {
+                    SputterMicros last = s_lastDispatch[coreId][t];
+                    if (last != 0 && (now - last) < period)
+                        continue;   // not yet due — skip entirely
+                    s_lastDispatch[coreId][t] = now;
+                }
+            }
         }
+
+        tsk->timer().start();
+        tsk->tick(now);
+        tsk->timer().stop();
+        busyAccum += tsk->timer().lastDuration();
     }
 
     // 5. Phase 2: Background task dispatch (background core only)
+    //    Budget ceiling = total budget minus Phase 1 busy time (§2.1).
     if (coreId == s_backgroundCoreId && s_backgroundTaskCount > 0)
     {
         SputterMicros gapBudget = CfgControlBudgetUs<Cfg>::value;
-        SputterMicros used      = busyAccum;
+        if (gapBudget > busyAccum)
+            gapBudget -= busyAccum;
+        else
+            gapBudget = 0;
+
+        SputterMicros used = 0;
 
         for (std::size_t i = 0; i < s_backgroundTaskCount; ++i)
         {
@@ -193,6 +224,7 @@ static void tick(std::size_t coreId, SputterMicros now)
                 used += bg->timer().lastDuration();
             }
         }
+        busyAccum += used;
     }
 
     // 6. Record tick end; utilization = busyAccum / (tickEnd - tickStart)
@@ -203,9 +235,10 @@ static void tick(std::size_t coreId, SputterMicros now)
 
 **Key properties:**
 
-- Scheduled tasks execute in **registration order**. Kernel scheduled tasks are prepended at build time so the order is always: `ScheduledControlTask` → `ScheduledCommsTask` → user tasks.
-- Every scheduled task is called **every tick** regardless of whether its period has elapsed. Tasks that aren't due return in a few nanoseconds.
+- Scheduled tasks execute in **priority order** (sorted by `effectivePriority()` at build time, §2.3). Kernel tasks have explicit priorities (`ScheduledControlTask` = 0, `ScheduledCommsTask` = 1) and sort first; user tasks with default `schedulePriority()` of 0xFF get auto-RMS priority (shorter period → lower number).
+- By default, every scheduled task is called **every tick** regardless of whether its period has elapsed. Tasks that opt in to `kernelManagedPeriod()` are skipped by the kernel when their declared period has not elapsed — the task's `tick()` is never invoked.
 - Background tasks dispatch **only on the designated background core** (`s_backgroundCoreId`) in Phase 2 after all scheduled tasks have run.
+- The Phase 2 budget ceiling is the **remaining gap time** after Phase 1: `gapBudget = CfgControlBudgetUs - busyAccum` (floored at 0). This prevents background tasks from overrunning the control budget (§2.1).
 - Background task dispatch is **round-robin**: each tick advances the ring index, so all registered background tasks receive equal scheduling priority across ticks.
 - **First background task always dispatches** unconditionally (to guarantee `BackgroundDiagnosticsTask` can monitor the system even when Phase 1 saturates the budget). Additional tasks are budget-gated by the remaining gap time.
 - Timer instrumentation records real wall-clock duration for scheduled tasks in Phase 1 and background tasks in Phase 2.
@@ -225,19 +258,19 @@ static void tick(std::size_t coreId, SputterMicros now)
 sequenceDiagram
     participant Run as System&lt;Cfg&gt;::run()
     participant Sys as System&lt;Cfg&gt;::tick()
-    participant SCT as ScheduledControlTask
-    participant SCM as ScheduledCommsTask
-    participant User as User IScheduledTask(s)
+    participant SCT as ScheduledControlTask (pri 0)
+    participant SCM as ScheduledCommsTask (pri 1)
+    participant User as User IScheduledTask(s) (pri by RMS)
     participant BDT as BackgroundDiagnosticsTask
 
-    Run->>Sys: tick(bgCore, now) [Phase 1]
-    Sys->>SCT: timer.start() → tick(now) → timer.stop()
+    Run->>Sys: tick(bgCore, now) [Phase 1 — priority order]
+    Sys->>SCT: kernelManagedPeriod? skip if not due, else tick(now)
     SCT->>SCT: evaluateSafety() → processCommands() → app.tick()
-    Sys->>SCM: timer.start() → tick(now) → timer.stop()
+    Sys->>SCM: kernelManagedPeriod? skip if not due, else tick(now)
     SCM->>SCM: CLI.tick() → try_push()
-    Sys->>User: timer.start() → tick(now) → timer.stop()
-    User->>User: rate-limit check → do work or return
-    Note over Sys: Phase 2 — background dispatch (bgCore only)
+    Sys->>User: kernelManagedPeriod? skip if not due, else tick(now)
+    User->>User: self-rate-limit check → do work or return
+    Note over Sys: Phase 2 — background dispatch (bgCore only, gapBudget)
     Sys->>BDT: timer.start() → tick(now) → timer.stop()
     BDT->>BDT: watchdogKick(), scan timers, drain telemetry
 ```
@@ -246,7 +279,7 @@ sequenceDiagram
 
 ## 4. Rate-Limiting Model
 
-The kernel calls every task every tick; **tasks are responsible for their own rate-limiting**. The canonical pattern:
+By default, the kernel calls every task every tick and **tasks are responsible for their own rate-limiting**. Alternatively, tasks can opt in to kernel-managed period dispatch by overriding `kernelManagedPeriod()` to return `true` (see §2.2) — in that case the kernel skips dispatch when the task's period has not elapsed. The canonical self-rate-limiting pattern:
 
 ```cpp
 class MyTask : public IScheduledTask {
@@ -350,7 +383,7 @@ Background tasks (`IBackgroundTask`) are registered via `SystemBuilder::addBackg
 Phase 2 runs a single **round-robin pass** through the background ring after Phase 1 completes:
 
 1. The **first task in the round-robin** always dispatches unconditionally — this guarantees `BackgroundDiagnosticsTask` runs every tick regardless of how saturated Phase 1 is.
-2. Each subsequent task is dispatched only if `used + task->maxBudgetUs() <= CfgControlBudgetUs<Cfg>::value`, where `used` is the accumulated Phase 1 + Phase 2 busy time.
+2. Each subsequent task is dispatched only if `used + task->maxBudgetUs() <= gapBudget`, where `gapBudget = CfgControlBudgetUs<Cfg>::value - busyAccum` (Phase 1 cost) and `used` starts at 0 for Phase 2, accumulating only Phase 2 busy time.
 3. The round-robin index `s_bgRoundRobin` advances each tick, ensuring all tasks receive equal priority distribution across ticks.
 
 ### 6.2 Static Members
@@ -523,7 +556,7 @@ UNCONFIGURED → CONFIGURED → INITIALIZING → RUNNING
 | `RUNNING` | `System::init()` completes |
 | `ABORTING` | `ControlTask::evaluateSafety()` failure (future wiring) |
 
-`System::tick()` records `s_kernelState` transitions but does not yet gate dispatch on state — all registered tasks are called unconditionally. Full state-gating (e.g., only safety slot runs during `ABORTING`) is planned for Phase 4.
+`System::tick()` records `s_kernelState` transitions but does not yet gate dispatch on state — all registered tasks are called unconditionally (unless `kernelManagedPeriod()` opts into kernel-side period skip). If a task's tick exceeds its `declaredWcetUs()`, the kernel logs `DEADLINE_MISS` and calls `onOverrun()` (§2.4). Full state-gating (e.g., only safety slot runs during `ABORTING`) is planned for Phase 4.
 
 ---
 
@@ -698,6 +731,14 @@ New optional config fields added to the `Cfg` struct contract, with SFINAE extra
 | Test Suite | File | What it Tests |
 |------------|------|--------------|
 | `MultiRatePipelineTest` | `test_MultiRatePipeline.cpp` | Build → init → tick loop with multi-rate tasks; sample counts, drain, TaskTimer |
+| `KernelManagedPeriodTest` | `test_MultiRatePipeline.cpp` | Kernel-managed period dispatch: tasks with `kernelManagedPeriod()=true` skipped when period not elapsed; tick counts match expected activation rate |
+| `PriorityOrderTest` | `test_MultiRatePipeline.cpp` | Priority-ordered dispatch: tasks sorted by `effectivePriority()` at build time; kernel tasks first; auto-RMS assigns shorter period → higher priority |
+| `KernelManagedPeriodEdgeTest` | `test_MultiRatePipeline.cpp` | Edge cases: period=0 never skips, identical timestamps, mixed managed/unmanaged coexistence |
+| `PriorityEdgeTest` | `test_MultiRatePipeline.cpp` | Edge cases: equal-priority stable sort preserves registration order, single task |
+| `GapBudgetEdgeTest` | `test_MultiRatePipeline.cpp` | Edge case: Phase 1 exceeds budget but first background task still dispatches |
+| `DeadlineMissTest` | `test_MultiRatePipeline.cpp` | Deadline miss detection: `onOverrun()` callback, no-WCET no-callback |
+| `PublicResetTest` | `test_MultiRatePipeline.cpp` | Public `reset()`: clears built flag, allows rebuild, returns to UNCONFIGURED |
+| `VersionTest` | `test_MultiRatePipeline.cpp` | Version macros and struct consistency |
 | `IoPendingPipelineTest` | `test_IoPendingPipeline.cpp` | Full kernel IO_PENDING cycle: start → yield → read; timeout detection; background coexistence |
 
 ### Example Projects

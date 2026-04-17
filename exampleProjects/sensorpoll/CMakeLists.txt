@@ -27,7 +27,7 @@ target_include_directories(sensorpoll_osNative PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal_impl    # SensorPollHAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/osal_impl   # SensorPollOSAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include     # SensorPollStateMachine.h, tasks
-    ${CMAKE_CURRENT_SOURCE_DIR}/../common/hal  # TcpStreamServer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/..           # common/hal/, common/osal/
 )
 
 target_link_libraries(sensorpoll_osNative PRIVATE

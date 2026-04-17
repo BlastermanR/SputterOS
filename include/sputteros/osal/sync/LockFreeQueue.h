@@ -36,7 +36,6 @@
 #include "sputteros/osal/sync/IMessageQueue.h"
 
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 
 namespace SputterOS
@@ -82,10 +81,10 @@ template <typename Cfg, std::size_t Capacity> class LockFreeQueue : public IMess
      * ignored — the SPSC ring buffer never blocks.
      *
      * @param cmd     Command to enqueue.
-     * @param timeout Ignored (present for IMessageQueue conformance).
+     * @param timeoutMs Ignored (present for IMessageQueue conformance).
      * @return true if the command was enqueued, false if the queue is full.
      */
-    bool push(const CommandStruct &cmd, std::chrono::milliseconds /*timeout*/) override { return try_push(cmd); }
+    bool push(const CommandStruct &cmd, SputterMillis /*timeoutMs*/) override { return try_push(cmd); }
 
     /**
      * @brief Non-blocking push.
@@ -114,11 +113,11 @@ template <typename Cfg, std::size_t Capacity> class LockFreeQueue : public IMess
      * The `timeout` parameter is accepted for interface conformance but is
      * ignored — the SPSC ring buffer never blocks.
      *
-     * @param cmd     Reference populated with the dequeued command.
-     * @param timeout Ignored (present for IMessageQueue conformance).
+     * @param cmd       Reference populated with the dequeued command.
+     * @param timeoutMs Ignored (present for IMessageQueue conformance).
      * @return true if a command was dequeued, false if the queue is empty.
      */
-    bool pop(CommandStruct &cmd, std::chrono::milliseconds /*timeout*/) override { return try_pop(cmd); }
+    bool pop(CommandStruct &cmd, SputterMillis /*timeoutMs*/) override { return try_pop(cmd); }
 
     /**
      * @brief Non-blocking pop.

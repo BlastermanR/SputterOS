@@ -317,57 +317,23 @@ Costs:
 virtual (default `false`) to `IScheduledTask`. Tasks that return `true` get
 kernel-managed period enforcement; others retain the current behavior.
 
-### 2.3 Priority-Ordered Dispatch  | Effort: L | Risk: ● | Payoff: ★★
+### 2.3 Priority-Ordered Dispatch — ✅ Complete  | Effort: L | Risk: ● | Payoff: ★★
 
-**Current state:** Tasks tick in registration order. `IScheduledTask` has a
-`schedulePriority()` virtual (default `0xFF` meaning RMS auto-assign), but
-it's unused by the flat-loop scheduler.
+**Implemented in v0.5.x:** `SystemBuilder::build()` sorts `CoreData::tasks[]` by
+`effectivePriority()` using heap-free insertion sort. `ScheduledControlTask` has
+priority 0, `ScheduledCommsTask` has priority 1. User tasks with default
+`schedulePriority()` (0xFF) receive auto-RMS priority (shorter period → higher
+priority). See SchedulingDesign.md §2.3.
 
-**Proposed change:** During `SystemBuilder::build()`, sort the per-core task
-list by priority (lower value = higher priority). If `schedulePriority()`
-returns `0xFF`, auto-assign using Rate Monotonic Scheduling (shorter period
-= higher priority):
+### 2.4 Deadline Miss Detection & Recovery — ✅ Partial (§2.4)  | Effort: M | Risk: ◑ | Payoff: ★★
 
-```cpp
-// In build(), after all tasks registered:
-for (std::size_t c = 0; c < kCoreCount; ++c)
-{
-    std::sort(s_cores[c].tasks, s_cores[c].tasks + s_cores[c].taskCount,
-        [](ITask* a, ITask* b) {
-            auto sa = static_cast<IScheduledTask*>(a);
-            auto sb = static_cast<IScheduledTask*>(b);
-            uint8_t pa = sa->schedulePriority();
-            uint8_t pb = sb->schedulePriority();
-            if (pa == 0xFF) pa = /* RMS: shorter period → lower value */;
-            if (pb == 0xFF) pb = /* RMS: shorter period → lower value */;
-            return pa < pb;
-        });
-}
-```
+**Implemented in v0.5.x (partial):**
+1. ✅ `ErrorLogger::ErrorCode::DEADLINE_MISS` — logged when `tick()` exceeds `declaredWcetUs()`.
+2. ❌ Skip lower-priority tasks for this tick — not yet implemented.
+3. ✅ `IScheduledTask::onOverrun(actualUs, budgetUs)` — virtual callback for task-specific recovery.
 
-This gives Rate Monotonic priority ordering for free ($2.3 combined with $2.2
-gives a classic fixed-priority cooperative scheduler). No new fields needed —
-`schedulePriority()` already exists in the interface.
-
-**Note:** `std::sort` requires `<algorithm>` and may allocate. Use an
-insertion sort (O(n²) is fine for n ≤ 32 tasks per core) to stay heap-free.
-
-### 2.4 Deadline Miss Detection & Recovery  | Effort: M | Risk: ◑ | Payoff: ★★
-
-**Current state:** `BackgroundDiagnosticsTask` checks `TaskTimer` data for
-overruns and logs them. The kernel itself doesn't react to deadline misses.
-
-**Proposed change:** If a task's `timer().lastDuration()` exceeds
-`declaredWcetUs()` (user-declared) or a kernel-computed deadline, the kernel
-can:
-1. Log to `ErrorLogger` with `DEADLINE_MISS` code (already partially done)
-2. Skip lower-priority tasks for this tick (requires §2.3)
-3. Call `IScheduledTask::onOverrun()` — a new optional virtual for
-   task-specific recovery (e.g., drop a sample, reduce fidelity)
-
-This is the foundation for soft-real-time guarantees. Combined with §2.2
-and §2.3, it gives: fixed-priority dispatch + period enforcement +
-overrun detection + degradation callbacks.
+Combined with §2.2 and §2.3, this gives: fixed-priority dispatch + period enforcement +
+overrun detection + degradation callbacks. Remaining: lower-priority skip on overrun.
 
 ### 2.5 Tick Timestamping Consistency  | Effort: S | Risk: ◯ | Payoff: ★
 
@@ -450,15 +416,14 @@ feature for test isolation, not a bug.
 are currently fast at ~90 KiB). The test isolation benefit alone justifies
 the template design.
 
-### 3.4 `System<Cfg>::reset()` as Public API  | Effort: S | Risk: ◑ | Payoff: ★★
+### 3.4 `System<Cfg>::reset()` as Public API — ✅ Complete  | Effort: S | Risk: ◑ | Payoff: ★★
 
-**Current state:** `reset()` is private, accessible only via
-`KernelTestAccess` friend struct. Tests need it; users might want it for
-soft-restart scenarios (e.g., reconfigure after a fault without power cycle).
+**Implemented in v0.5.x:** `reset()` is now public on `System<Cfg>`. Clears all
+static state and returns the kernel to `UNCONFIGURED`. Callable for fault recovery
+and test isolation. `KernelTestAccess::resetSystem()` still works (delegates to
+the now-public method).
 
-**Proposed change:** Make `reset()` public (or provide a `System<Cfg>::shutdown()`
-public method that transitions to SHUTDOWN and clears state). Guard with a
-state check — only callable from SHUTDOWN state.
+**Warning:** Must only be called when no core is actively ticking.
 
 ### 3.5 Event-Driven Stop Conditions  | Effort: S | Risk: ◯ | Payoff: ★
 

@@ -30,8 +30,8 @@ template <typename Cfg> class MockMessageQueue : public IMessageQueue<Cfg>
   public:
     using CommandStruct = typename Cfg::Command;
 
-    MOCK_METHOD(bool, push, (const CommandStruct &cmd, std::chrono::milliseconds timeout), (override));
-    MOCK_METHOD(bool, pop, (CommandStruct & cmd, std::chrono::milliseconds timeout), (override));
+    MOCK_METHOD(bool, push, (const CommandStruct &cmd, SputterMillis timeout), (override));
+    MOCK_METHOD(bool, pop, (CommandStruct & cmd, SputterMillis timeout), (override));
     MOCK_METHOD(bool, try_push, (const CommandStruct &cmd), (override));
     MOCK_METHOD(bool, try_pop, (CommandStruct & cmd), (override));
     MOCK_METHOD(std::size_t, size, (), (const, override));

@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased]
+
+---
+
+## [v1.0.0] — 2026-04-17
+
+### Changed
+
+- **§2.1 Gap-time ring budget fix** — Phase 2 background dispatch now uses
+  `gapBudget = CfgControlBudgetUs - busyAccum` (not the full budget). `used` starts
+  at 0 for Phase 2; `busyAccum += used` is added after the Phase 2 loop.
+- **§2.2 Period-aware skip** — `IScheduledTask::kernelManagedPeriod()` opt-in virtual
+  (default `false`). When `true`, the kernel skips dispatch if the task's period has not
+  elapsed. `s_lastDispatch[kCoreCount][kMaxTasksPerCore]` tracks last dispatch time.
+- **§2.3 Priority-ordered dispatch** — `SystemBuilder::build()` sorts tasks by
+  `effectivePriority()` using insertion sort. `ScheduledControlTask::schedulePriority()=0`,
+  `ScheduledCommsTask::schedulePriority()=1`. Default `0xFF` gets auto-RMS (shorter
+  period → higher priority).
+- `System<Cfg>::reset()` is now **public** — enables fault recovery and test isolation
+  without `KernelTestAccess`.
+
+### Added
+
+- `KernelManagedPeriodTest` system test suite (2 tests) in `test_MultiRatePipeline.cpp`
+- `PriorityOrderTest` system test suite (2 tests) in `test_MultiRatePipeline.cpp`
+- `KernelManagedPeriodEdgeTest` system test suite (3 tests) — period=0, identical timestamps, mixed managed/unmanaged
+- `PriorityEdgeTest` system test suite (2 tests) — stable sort for equal priorities, single task
+- `GapBudgetEdgeTest` system test suite (1 test) — Phase 1 exceeds budget, first bg still dispatches
+- `DeadlineMissTest` system test suite (2 tests) — onOverrun callback, no-WCET no-callback
+- `PublicResetTest` system test suite (3 tests) — reset clears built, allows rebuild, returns to UNCONFIGURED
+- `VersionTest` unit tests (2 tests) — macro values and struct consistency
+- `IScheduledTask::onOverrun(actualUs, budgetUs)` virtual — callback for deadline miss recovery (§2.4)
+- `ErrorLogger::ErrorCode::DEADLINE_MISS` (value 10) — logged when `tick()` exceeds `declaredWcetUs()`
+- `include/sputteros/Version.h` — `SPUTTEROS_VERSION_MAJOR/MINOR/PATCH/INT/STRING` macros and
+  `SputterOS::Version` struct
+
+---
+
 ## [v0.5.0] — 2026-04-14
 
 ### Added

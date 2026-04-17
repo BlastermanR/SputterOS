@@ -28,7 +28,7 @@ target_include_directories(multirate_osNative PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal_impl    # MultirateHAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/osal_impl   # MultirateOSAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include     # MultirateStateMachine.h, tasks
-    ${CMAKE_CURRENT_SOURCE_DIR}/../common/hal  # TcpStreamServer.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/..           # common/hal/, common/osal/
 )
 
 target_link_libraries(multirate_osNative PRIVATE

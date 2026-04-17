@@ -22,7 +22,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
+#include "sputteros/utils/MemUtils.h"
 
 namespace SputterOS
 {
@@ -87,7 +87,7 @@ template <std::size_t MaxPayload = 256> class FrameEncoder
         // Payload
         if (payloadLen > 0 && payload != nullptr)
         {
-            std::memcpy(&raw[pos], payload, payloadLen);
+            sput_memcpy(&raw[pos], payload, payloadLen);
             pos += payloadLen;
         }
 

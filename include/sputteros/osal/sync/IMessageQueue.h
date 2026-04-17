@@ -3,8 +3,8 @@
 
 #include "sputteros/osal/sync/ICommandConsumer.h"
 #include "sputteros/osal/sync/ICommandProducer.h"
+#include "sputteros/osal/SputterTime.h"
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 
@@ -51,37 +51,37 @@ template <typename Cfg> class IMessageQueue : public ICommandProducer<Cfg>, publ
     /**
      * @brief Push a command into the queue, blocking up to timeout.
      * @param cmd Command to enqueue.
-     * @param timeout Maximum time to wait. 0 ms = non-blocking.
+     * @param timeoutMs Maximum time to wait in milliseconds. 0 = non-blocking.
      * @return true if the command was accepted, false on timeout or error.
      */
-    virtual bool push(const CommandStruct &cmd, std::chrono::milliseconds timeout) = 0;
+    virtual bool push(const CommandStruct &cmd, SputterMillis timeoutMs) = 0;
 
     /**
      * @brief Attempt to push a command without blocking.
      * @param cmd Command to enqueue.
      * @return true if the command was accepted, false otherwise.
      *
-     * Default implementation calls `push(cmd, 0ms)` and may be overridden by
+     * Default implementation calls `push(cmd, 0)` and may be overridden by
      * implementations for greater efficiency.
      */
-    virtual bool try_push(const CommandStruct &cmd) { return push(cmd, std::chrono::milliseconds{0}); }
+    virtual bool try_push(const CommandStruct &cmd) { return push(cmd, 0); }
 
     /**
      * @brief Pop a command from the queue, blocking up to timeout.
      * @param cmd Reference to receive the dequeued command.
-     * @param timeout Maximum time to wait. 0 ms = non-blocking.
+     * @param timeoutMs Maximum time to wait in milliseconds. 0 = non-blocking.
      * @return true if a command was returned, false on timeout/empty.
      */
-    virtual bool pop(CommandStruct &cmd, std::chrono::milliseconds timeout) = 0;
+    virtual bool pop(CommandStruct &cmd, SputterMillis timeoutMs) = 0;
 
     /**
      * @brief Attempt to pop a command without blocking.
      * @param cmd Reference to receive the dequeued command.
      * @return true if a command was returned, false otherwise.
      *
-     * Default implementation calls `pop(cmd, 0ms)` and may be overridden.
+     * Default implementation calls `pop(cmd, 0)` and may be overridden.
      */
-    virtual bool try_pop(CommandStruct &cmd) { return pop(cmd, std::chrono::milliseconds{0}); }
+    virtual bool try_pop(CommandStruct &cmd) { return pop(cmd, 0); }
 
     /**
      * @brief Return the approximate number of items in the queue.

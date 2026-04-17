@@ -28,7 +28,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
+#include "sputteros/utils/MemUtils.h"
 
 namespace SputterOS
 {
@@ -116,7 +116,7 @@ template <typename Cfg> class ProtocolRouter
         cmd.targetDevice = payload[1];
 
         float val;
-        std::memcpy(&val, &payload[2], sizeof(float));
+        sput_memcpy(&val, &payload[2], sizeof(float));
         cmd.value = val;
 
         m_handler->onCommand(cmd, seqNum);

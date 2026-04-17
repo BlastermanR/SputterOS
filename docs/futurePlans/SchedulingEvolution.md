@@ -3,7 +3,7 @@
 Analysis of the current scheduling model, its limitations relative to AMP design
 principles, and a prioritized roadmap for improvement.
 
-**Status:** Planning  
+**Status:** Phase 1 Complete — Phases 2–3 Planning  
 **Baseline:** v0.5.0  
 **Related documents:** [SchedulingDesign.md](../SchedulingDesign.md), [MultiCoreImplementation.md](../MultiCoreImplementation.md), [LongTermPlans.md](../../LongTermPlans.md)
 
@@ -22,29 +22,34 @@ principles, and a prioritized roadmap for improvement.
 
 ## 1. Current Scheduler Summary
 
-SputterOS uses a **cooperative flat-loop scheduler**. Each core runs a `while` loop that
-calls every registered task unconditionally on every iteration. There is no scheduler
-decision logic at runtime.
+SputterOS uses a **cooperative priority-ordered scheduler**. Each core runs a `while` loop that
+iterates registered tasks in priority order (sorted at build time). Tasks that opt in to
+`kernelManagedPeriod()` are skipped by the kernel when their period has not elapsed. Tasks
+that exceed their `declaredWcetUs()` trigger an `onOverrun()` callback and a `DEADLINE_MISS` log.
 
 ### 1.1 The Tick Loop
 
 ```
 while (running):
-    // Phase 1 — all IScheduledTasks on this core, in registration order
-    for each task in CoreData::tasks[]:
-        timer.start()
-        task.tick(now)      ← always called, regardless of period
-        timer.stop()
+    // Phase 1 — all IScheduledTasks on this core, in priority order (§2.3)
+    for each task in CoreData::tasks[]:       // sorted by effectivePriority() at build time
+        if task.kernelManagedPeriod() and not due:
+            skip                              // §2.2 period-aware skip
+        else:
+            timer.start()
+            task.tick(now)
+            timer.stop()
 
     // Phase 2 — background ring (one designated core only)
     if (coreId == s_backgroundCoreId):
+        gapBudget = kControlBudgetUs - busyAccum    // §2.1 gap-time ring budget
         round-robin dispatch from s_backgroundTasks[]
-        subject to gap budget cap (kControlBudgetUs - phase1 cost)
+        subject to gapBudget cap
 ```
 
 ### 1.2 Rate-Limiting Is Task-Internal
 
-The kernel never skips a task. Each `IScheduledTask` self-rate-limits:
+By default, each `IScheduledTask` self-rate-limits (the kernel calls `tick()` unconditionally). Tasks that opt in to `kernelManagedPeriod()` are skipped by the kernel when their period has not elapsed (§2.2). The default self-rate-limiting pattern:
 
 ```cpp
 void tick(SputterMicros now) override {
@@ -85,12 +90,13 @@ This is inconsistent with AMP (Asymmetric Multi-Processing) design principles, w
 - Real-time tasks are statically pinned to specific cores (which SputterOS does correctly)
 - Best-effort background work is opportunistically distributed across all available cores
 
-### 2.2 No Priority Ordering
+### 2.2 Priority Ordering — ✅ Resolved (§2.3)
 
-The flat loop executes tasks in registration order. A 2 Hz low-priority reporting task
-and a 100 Hz high-priority safety sensor task share equal dispatch weight per iteration.
-`IScheduledTask::schedulePriority()` exists as a field but is unused by the current
-scheduler — it was added as a reserved extension point.
+~~The flat loop executes tasks in registration order.~~ **Resolved in v0.5.x:**
+`SystemBuilder::build()` now sorts `CoreData::tasks[]` by `effectivePriority()` using
+insertion sort. `ScheduledControlTask` has priority 0, `ScheduledCommsTask` has priority 1.
+User tasks with default `schedulePriority()` (0xFF) receive auto-assigned Rate-Monotonic
+priority (shorter period → higher priority). See SchedulingDesign.md §2.3.
 
 ### 2.3 Background Budget Is Best-Effort Only
 
@@ -236,14 +242,13 @@ protected by a `std::atomic` RR index (any core may dispatch it, first-come wins
 
 Three incremental phases, each independently shippable and non-breaking.
 
-### Phase 1 — Activate `schedulePriority()` (Cooperative RMS)
+### Phase 1 — Activate `schedulePriority()` (Cooperative RMS) — ✅ Complete
 
-**Target:** v0.6.0  
-**Scope:** `SystemBuilder::build()` sorts `CoreData::tasks[]` by `schedulePriority()`;
-`System::tick()` inner loop skips non-ready tasks after first miss.
-
-This activates the already-designed extension point with minimal code change.
-Existing users with default `schedulePriority()` (0xFF) retain identical behavior.
+**Shipped:** v0.5.x (§2.2 + §2.3)  
+**Implemented:** `SystemBuilder::build()` sorts `CoreData::tasks[]` by `effectivePriority()`;
+`System::tick()` skips tasks with `kernelManagedPeriod()=true` when their period has not elapsed.
+Kernel tasks have explicit priorities (ControlTask=0, CommsTask=1); user tasks with
+default `schedulePriority()` (0xFF) receive auto-RMS priority.
 
 ### Phase 2 — CBS Background Server
 
@@ -264,18 +269,17 @@ Resolve `BackgroundDiagnosticsTask` per-instance vs. shared-atomic design.
 
 ## 5. Phase Breakdown
 
-### Phase 1 — Priority Sorting
+### Phase 1 — Priority Sorting — ✅ Complete
 
 **Files changed:**
 
-| File | Change |
-|---|---|
-| `SystemBuilder.h` | Sort `m_cores[c].tasks[]` by `schedulePriority()` after all tasks are added in `build()` |
-| `System.h` | `tick()` inner loop: after first non-ready task, continue scan rather than unconditionally calling all |
-| `IScheduledTask.h` | No change — `schedulePriority()` already declared |
+| File | Change | Status |
+|---|---|---|
+| `SystemBuilder.h` | Sorts `CoreData::tasks[]` by `effectivePriority()` using insertion sort in `build()` | ✅ Done |
+| `System.h` | `tick()` Phase 1 skips tasks with `kernelManagedPeriod()=true` when period not elapsed; Phase 2 uses `gapBudget = CfgControlBudgetUs - busyAccum` | ✅ Done |
+| `IScheduledTask.h` | Added `kernelManagedPeriod()` virtual (default false) | ✅ Done |
 
-**New tests:** `test_PriorityOrdering.cpp` — verify dispatch order matches priority,
-not registration order.
+**Tests:** `KernelManagedPeriodTest` and `PriorityOrderTest` suites in `test_MultiRatePipeline.cpp`.
 
 ### Phase 2 — CBS Background Server
 

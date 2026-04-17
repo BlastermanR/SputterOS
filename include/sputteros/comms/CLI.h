@@ -14,7 +14,7 @@
 #include "sputteros/utils/logging/LightweightStringBuilder.h"
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
+#include "sputteros/utils/MemUtils.h"
 
 namespace SputterOS
 {
@@ -212,7 +212,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
         {
             return;
         }
-        m_stream->write(reinterpret_cast<const uint8_t *>(str), std::strlen(str));
+        m_stream->write(reinterpret_cast<const uint8_t *>(str), sput_strlen(str));
     }
 
     /**
@@ -521,7 +521,7 @@ template <typename Cfg, std::size_t MaxPayload = 256> class CLI
                 const uint8_t *p             = m_frameDecoder.getPayload();
                 m_framedCommand.id           = static_cast<typename Cfg::CmdID>(p[0]);
                 m_framedCommand.targetDevice = p[1];
-                std::memcpy(&m_framedCommand.value, &p[2], sizeof(float));
+                sput_memcpy(&m_framedCommand.value, &p[2], sizeof(float));
                 m_hasFramedCommand = true;
                 m_framedSeqNum     = seq;
             }

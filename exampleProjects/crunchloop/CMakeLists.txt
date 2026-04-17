@@ -29,6 +29,7 @@ target_include_directories(crunchloop_osNative PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hal_impl    # CrunchLoopHAL.h
     ${CMAKE_CURRENT_SOURCE_DIR}/osal_impl   # CrunchLoopOSAL.h, TimedMutexAdapter.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include     # CrunchLoopApp.h, SimulatedServoTask.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/..           # common/hal/, common/osal/
 )
 
 target_link_libraries(crunchloop_osNative PRIVATE

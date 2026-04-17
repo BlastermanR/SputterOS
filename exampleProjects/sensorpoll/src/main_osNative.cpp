@@ -38,7 +38,7 @@
 
 #include "AdcPollTask.h"
 #include "SensorLogTask.h"
-#include "TcpStreamServer.h"
+#include "common/hal/TcpStreamServer.h"
 
 #include "sputteros/builder/SystemBuilder.h"
 #include "sputteros/kernel/System.h"

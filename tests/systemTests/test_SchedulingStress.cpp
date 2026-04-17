@@ -380,7 +380,7 @@ TEST_F(SchedulingStress_CoreSaturation, MixedPeriodTasksAllRegistered)
 
     System<CoreSatCfg>::init(0);
 
-    // All tasks tick every System::tick() call (current dispatcher is flat iteration).
+    // All tasks tick every System::tick() call (tasks self-rate-limit; none use kernelManagedPeriod here).
     static constexpr uint32_t kTicks = 200;
     for (uint64_t t = 1; t <= kTicks; ++t)
     {
