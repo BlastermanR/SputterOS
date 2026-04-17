@@ -59,8 +59,8 @@
 #ifndef SPUTTEROS_OSAL_MULTICORE_SYNC_H
 #define SPUTTEROS_OSAL_MULTICORE_SYNC_H
 
-#include "sputteros/osal/sync/ICoreErrorHandler.h"
 #include "sputteros/osal/SputterTime.h"
+#include "sputteros/osal/sync/ICoreErrorHandler.h"
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -180,8 +180,7 @@ template <std::size_t N_CORES> class MultiCoreSync
      * @return true  if all cores reached READY within the timeout.
      * @return false if the barrier timed out or any core is in ERROR.
      */
-    bool startupBarrier(std::size_t coreId, SputterMillis timeoutMs,
-                        SputterMillis pollIntervalMs = 1)
+    bool startupBarrier(std::size_t coreId, SputterMillis timeoutMs, SputterMillis pollIntervalMs = 1)
     {
         setReady(coreId);
 
@@ -218,8 +217,7 @@ template <std::size_t N_CORES> class MultiCoreSync
      * @return true  if all cores reached SHUTDOWN/ERROR within timeout.
      * @return false if the barrier timed out.
      */
-    bool shutdownBarrier(std::size_t coreId, SputterMillis timeoutMs,
-                         SputterMillis pollIntervalMs = 1)
+    bool shutdownBarrier(std::size_t coreId, SputterMillis timeoutMs, SputterMillis pollIntervalMs = 1)
     {
         setShutdown(coreId);
 

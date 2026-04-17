@@ -56,8 +56,8 @@
 #include "LifecycleStateMachine.h"
 #include "MonitorTask.h"
 #include "SharedState.h"
-#include "common/hal/TcpStreamServer.h"
 #include "WorkerTask.h"
+#include "common/hal/TcpStreamServer.h"
 
 #include "TimedMutexAdapter.h"
 #include "sputteros/builder/SystemBuilder.h"

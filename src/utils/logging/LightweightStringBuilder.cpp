@@ -41,9 +41,9 @@ int renderU32(char *tmp, std::size_t tmpLen, uint32_t val)
     // Reverse in place
     for (int i = 0, j = idx - 1; i < j; ++i, --j)
     {
-        char c  = tmp[i];
-        tmp[i]  = tmp[j];
-        tmp[j]  = c;
+        char c = tmp[i];
+        tmp[i] = tmp[j];
+        tmp[j] = c;
     }
     return idx;
 }
@@ -68,10 +68,10 @@ LightweightStringBuilder &LightweightStringBuilder::append(const char *str)
 
 LightweightStringBuilder &LightweightStringBuilder::append(int32_t value)
 {
-    char tmp[16];
-    bool negative = value < 0;
-    uint32_t uval = negative ? static_cast<uint32_t>(-value) : static_cast<uint32_t>(value);
-    int len = renderU32(tmp, sizeof(tmp), uval);
+    char     tmp[16];
+    bool     negative = value < 0;
+    uint32_t uval     = negative ? static_cast<uint32_t>(-value) : static_cast<uint32_t>(value);
+    int      len      = renderU32(tmp, sizeof(tmp), uval);
     if (negative)
     {
         append('-');
@@ -87,7 +87,7 @@ LightweightStringBuilder &LightweightStringBuilder::append(int32_t value)
 LightweightStringBuilder &LightweightStringBuilder::append(uint32_t value)
 {
     char tmp[16];
-    int len = renderU32(tmp, sizeof(tmp), value);
+    int  len = renderU32(tmp, sizeof(tmp), value);
     for (int i = 0; i < len && m_len < kCapacity - 1; ++i)
     {
         m_buf[m_len++] = tmp[i];
@@ -115,7 +115,7 @@ LightweightStringBuilder &LightweightStringBuilder::append(float value, uint8_t 
 
     auto intPart = static_cast<uint32_t>(value);
     char tmp[16];
-    int len = renderU32(tmp, sizeof(tmp), intPart);
+    int  len = renderU32(tmp, sizeof(tmp), intPart);
     for (int i = 0; i < len && m_len < kCapacity - 1; ++i)
     {
         m_buf[m_len++] = tmp[i];

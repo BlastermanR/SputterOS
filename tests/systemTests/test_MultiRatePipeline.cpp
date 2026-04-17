@@ -459,8 +459,8 @@ TEST_F(KernelManagedPeriodTest, MultipleTasksAtDifferentRates)
     AlwaysSafeSafetyMonitor monitor;
     ISafetyMonitor         *monitors[] = {&monitor};
 
-    KernelManagedTask fast(10'000);   // 10 ms
-    KernelManagedTask slow(100'000);  // 100 ms
+    KernelManagedTask fast(10'000);  // 10 ms
+    KernelManagedTask slow(100'000); // 100 ms
 
     SystemBuilder<KMCfg1> builder(&app, monitors, 1);
     builder.setStream(&stream).setWatchdogKick(nullptr);
@@ -494,10 +494,8 @@ TEST_F(KernelManagedPeriodTest, MultipleTasksAtDifferentRates)
 class OrderTrackingTask : public IScheduledTask
 {
   public:
-    OrderTrackingTask(SputterMicros period, uint8_t priority, uint32_t id,
-                      uint32_t *orderLog, uint32_t &orderIdx)
-        : m_period(period), m_priority(priority), m_id(id),
-          m_orderLog(orderLog), m_orderIdx(orderIdx)
+    OrderTrackingTask(SputterMicros period, uint8_t priority, uint32_t id, uint32_t *orderLog, uint32_t &orderIdx)
+        : m_period(period), m_priority(priority), m_id(id), m_orderLog(orderLog), m_orderIdx(orderIdx)
     {
     }
 
@@ -759,7 +757,11 @@ TEST_F(PriorityEdgeTest, SingleUserTask_NoSortIssue)
     bool found = false;
     for (uint32_t i = 0; i < orderIdx; ++i)
     {
-        if (orderLog[i] == 42) { found = true; break; }
+        if (orderLog[i] == 42)
+        {
+            found = true;
+            break;
+        }
     }
     EXPECT_TRUE(found);
 }
@@ -771,8 +773,14 @@ TEST_F(PriorityEdgeTest, SingleUserTask_NoSortIssue)
 // Config with a very small control budget to test gap budget limits
 template <int N> struct TightBudgetCfg
 {
-    enum class State : uint8_t { IDLE = 0 };
-    enum class CmdID : uint8_t { NOP = 0 };
+    enum class State : uint8_t
+    {
+        IDLE = 0
+    };
+    enum class CmdID : uint8_t
+    {
+        NOP = 0
+    };
     struct Command
     {
         CmdID   id;
@@ -785,7 +793,7 @@ template <int N> struct TightBudgetCfg
     static constexpr std::size_t kCoreCount          = 1;
     static constexpr std::size_t kQueueCapacity      = 8;
     // Tiny budget to stress gap budget logic
-    static constexpr SputterMicros kControlBudgetUs  = 100;
+    static constexpr SputterMicros kControlBudgetUs = 100;
 };
 
 class SmallBudgetBackground : public IBackgroundTask
@@ -845,10 +853,10 @@ class OverrunTrackingTask : public IScheduledTask
 
     void init() override
     {
-        m_tickCount     = 0;
-        m_overrunCount  = 0;
-        m_lastActualUs  = 0;
-        m_lastBudgetUs  = 0;
+        m_tickCount    = 0;
+        m_overrunCount = 0;
+        m_lastActualUs = 0;
+        m_lastBudgetUs = 0;
     }
 
     void tick(SputterMicros) override { ++m_tickCount; }

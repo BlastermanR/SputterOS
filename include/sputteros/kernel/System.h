@@ -64,8 +64,8 @@
 #include "sputteros/utils/logging/ErrorLogger.h"
 #include "sputteros/utils/logging/TelemetryLogger.h"
 
-#include "sputteros/utils/PlatformAssert.h"
 #include "sputteros/utils/InPlaceStorage.h"
+#include "sputteros/utils/PlatformAssert.h"
 #include "sputteros/utils/TypeTraits.h"
 
 #include <cstddef>
@@ -90,17 +90,9 @@ struct NoOpMultiCoreSync
     void setError(std::size_t, const char *) {}
     void setShutdown(std::size_t) {}
 
-    bool startupBarrier(std::size_t, SputterMillis,
-                        SputterMillis = 1)
-    {
-        return true;
-    }
+    bool startupBarrier(std::size_t, SputterMillis, SputterMillis = 1) { return true; }
 
-    bool shutdownBarrier(std::size_t, SputterMillis,
-                         SputterMillis = 1)
-    {
-        return true;
-    }
+    bool shutdownBarrier(std::size_t, SputterMillis, SputterMillis = 1) { return true; }
 };
 
 // Forward declarations
@@ -335,14 +327,13 @@ template <typename Cfg> class System
             // notify the task via onOverrun() for task-specific recovery.
             if (tsk->isScheduled())
             {
-                auto *sched = static_cast<IScheduledTask *>(tsk);
-                SputterMicros wcet = sched->declaredWcetUs();
+                auto         *sched  = static_cast<IScheduledTask *>(tsk);
+                SputterMicros wcet   = sched->declaredWcetUs();
                 SputterMicros actual = tsk->timer().lastDuration();
                 if (wcet > 0 && actual > wcet)
                 {
                     tsk->timer().recordDeadlineMiss();
-                    s_errorLogger.log(ErrorLogger::ErrorCode::DEADLINE_MISS,
-                                      systemTimeMicros,
+                    s_errorLogger.log(ErrorLogger::ErrorCode::DEADLINE_MISS, systemTimeMicros,
                                       static_cast<float>(actual));
                     sched->onOverrun(actual, wcet);
                 }

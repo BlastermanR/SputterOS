@@ -20,9 +20,9 @@
 #include "sputteros/comms/protocol/FrameConstants.h"
 #include "sputteros/comms/protocol/MessageType.h"
 
+#include "sputteros/utils/MemUtils.h"
 #include <cstddef>
 #include <cstdint>
-#include "sputteros/utils/MemUtils.h"
 
 namespace SputterOS
 {

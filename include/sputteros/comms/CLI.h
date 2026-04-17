@@ -11,10 +11,10 @@
 #include "sputteros/comms/protocol/ResponseSerializer.h"
 #include "sputteros/hal/devices/IStream.h"
 #include "sputteros/logic/CommandParser.h"
+#include "sputteros/utils/MemUtils.h"
 #include "sputteros/utils/logging/LightweightStringBuilder.h"
 #include <cstddef>
 #include <cstdint>
-#include "sputteros/utils/MemUtils.h"
 
 namespace SputterOS
 {

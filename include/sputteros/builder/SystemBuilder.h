@@ -848,8 +848,8 @@ template <typename Cfg> class SystemBuilder
         if (!tsk || !tsk->isScheduled())
             return 0xFE;
 
-        auto *sched = static_cast<IScheduledTask *>(tsk);
-        uint8_t p = sched->schedulePriority();
+        auto   *sched = static_cast<IScheduledTask *>(tsk);
+        uint8_t p     = sched->schedulePriority();
         if (p != 0xFF)
             return p; // explicit override
 
@@ -861,11 +861,16 @@ template <typename Cfg> class SystemBuilder
         // Map microsecond periods to a single byte.  Kernel tasks have
         // priorities 0–1 (explicit), so we map into [2, 0xFD].
         // Clamp periods that exceed 10s to the lowest auto band.
-        if (period <= 100)       return 2;
-        if (period <= 1'000)     return 10;
-        if (period <= 10'000)    return 20;
-        if (period <= 100'000)   return 40;
-        if (period <= 1'000'000) return 80;
+        if (period <= 100)
+            return 2;
+        if (period <= 1'000)
+            return 10;
+        if (period <= 10'000)
+            return 20;
+        if (period <= 100'000)
+            return 40;
+        if (period <= 1'000'000)
+            return 80;
         return 0xA0;
     }
 
@@ -883,9 +888,9 @@ template <typename Cfg> class SystemBuilder
             // Insertion sort — stable, zero-allocation
             for (std::size_t i = 1; i < core.taskCount; ++i)
             {
-                ITask  *key    = core.tasks[i];
-                uint8_t keyPri = effectivePriority(key);
-                std::size_t j  = i;
+                ITask      *key    = core.tasks[i];
+                uint8_t     keyPri = effectivePriority(key);
+                std::size_t j      = i;
                 while (j > 0 && effectivePriority(core.tasks[j - 1]) > keyPri)
                 {
                     core.tasks[j] = core.tasks[j - 1];

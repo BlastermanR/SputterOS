@@ -1,9 +1,9 @@
 #ifndef SPUTTEROS_OSAL_IMESSAGEQUEUE_H
 #define SPUTTEROS_OSAL_IMESSAGEQUEUE_H
 
+#include "sputteros/osal/SputterTime.h"
 #include "sputteros/osal/sync/ICommandConsumer.h"
 #include "sputteros/osal/sync/ICommandProducer.h"
-#include "sputteros/osal/SputterTime.h"
 
 #include <cstddef>
 #include <cstdint>

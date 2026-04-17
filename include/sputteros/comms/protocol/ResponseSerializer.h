@@ -16,9 +16,9 @@
 #include "sputteros/comms/protocol/FrameConstants.h"
 #include "sputteros/utils/PerformanceSnapshot.h"
 
+#include "sputteros/utils/MemUtils.h"
 #include <cstddef>
 #include <cstdint>
-#include "sputteros/utils/MemUtils.h"
 
 namespace SputterOS
 {

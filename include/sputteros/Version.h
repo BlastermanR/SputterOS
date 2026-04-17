@@ -18,7 +18,7 @@
 #define SPUTTEROS_VERSION_PATCH 0
 
 /** @brief Full version as a single integer: (major * 10000 + minor * 100 + patch). */
-#define SPUTTEROS_VERSION_INT \
+#define SPUTTEROS_VERSION_INT                                                                                          \
     (SPUTTEROS_VERSION_MAJOR * 10000 + SPUTTEROS_VERSION_MINOR * 100 + SPUTTEROS_VERSION_PATCH)
 
 /** @brief Version string literal, e.g. "0.5.0". */

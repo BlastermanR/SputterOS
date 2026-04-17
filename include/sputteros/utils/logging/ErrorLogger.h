@@ -49,7 +49,7 @@ class ErrorLogger
         TIMER_ROLLOVER   = 7, /**< @brief System timer wrapped around. */
         INVALID_STATE    = 8, /**< @brief Invalid kernel state transition attempted. */
         CRUNCH_OVERRUN   = 9, /**< @brief Crunch task iteration exceeded maxIterationUs(). */
-        DEADLINE_MISS    = 10  /**< @brief Scheduled task tick exceeded declaredWcetUs(). */
+        DEADLINE_MISS    = 10 /**< @brief Scheduled task tick exceeded declaredWcetUs(). */
     };
 
     /**
