@@ -32,11 +32,12 @@
 // #include "sputteros/SputterOS.h"
 
 // Option B: Include only what you need (recommended for production)
-#include "sputteros/Builder.h" // SystemBuilder
-#include "sputteros/HAL.h"     // IStream
-#include "sputteros/Kernel.h"  // System, ISafetyMonitor, IUserApplication
-#include "sputteros/OSAL.h"    // SputterTime, tasks, sync
-#include "sputteros/Utils.h"   // TelemetryLogger
+#include "sputteros/Builder.h"  // SystemBuilder
+#include "sputteros/HAL.h"      // IStream
+#include "sputteros/Kernel.h"   // System, ISafetyMonitor, IUserApplication
+#include "sputteros/OSAL.h"     // SputterTime, tasks, sync
+#include "sputteros/Utils.h"    // TelemetryLogger
+// #include "sputteros/Version.h" // SPUTTEROS_VERSION_MAJOR/MINOR/PATCH/INT/STRING
 
 // ── Standard Library ────────────────────────────────────────────────────────
 #include <array>
@@ -159,9 +160,26 @@ class MyStream : public IStream
 // class MySensorTask : public IScheduledTask
 // {
 //   public:
+//     // Required
 //     SputterMicros periodUs() const override { return 50000; } // 20 Hz
 //     void init() override { /* sensor setup */ }
 //     void tick(SputterMicros now) override { /* read sensor */ }
+//
+//     // Optional — declare WCET so the scheduler can verify feasibility
+//     // and detect overruns. 0 = auto-profile from TaskTimer data.
+//     SputterMicros declaredWcetUs() const override { return 2000; } // 2 ms
+//
+//     // Optional — static priority override. Default 0xFF = auto-RMS
+//     // (shorter period → higher priority). Lower value = higher priority.
+//     uint8_t schedulePriority() const override { return 0xFF; }
+//
+//     // Optional — let the kernel enforce period-based dispatch (§2.2).
+//     // When true, the kernel skips this task until periodUs() has elapsed.
+//     bool kernelManagedPeriod() const override { return false; }
+//
+//     // Optional — called when tick() exceeded declaredWcetUs() (§2.4).
+//     // Implement to log, shed load, or transition to a degraded mode.
+//     void onOverrun(SputterMicros /*actualUs*/, SputterMicros /*budgetUs*/) override {}
 // };
 // MySensorTask sensorTask;
 // builder.core(0).addScheduledTask(&sensorTask);
