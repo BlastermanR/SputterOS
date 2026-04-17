@@ -270,7 +270,7 @@ SputterOS is actively developed as part of **Carnegie Mellon University's Hacker
 - Read [Contributing Guide](.github/CONTRIBUTING.md) for setup, coding standards, and PR workflow
 - Follow [Code of Conduct](.github/CODE_OF_CONDUCT.md) in all community interactions
 - Review security posture and reporting limitations in [Security Policy](.github/SECURITY.md)
-- Use SputterOS in your control system project and provide feedback
+- Use SputterOS in your vacuum control project and provide feedback
 - Implement HAL drivers for specialized equipment
 - Share OSAL bindings (FreeRTOS, ThreadX, bare-metal) to help others
 - Open an issue or contact the Hacker Fab maintainers
