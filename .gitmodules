@@ -1,3 +1,0 @@
-[submodule "lib/units"]
-	path = lib/units
-	url = https://github.com/nholthaus/units.git
