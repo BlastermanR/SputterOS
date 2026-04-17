@@ -1,0 +1,2 @@
+[console_scripts]
+sputterctl = sputterctl.__main__:main
