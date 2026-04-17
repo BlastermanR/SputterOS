@@ -1,0 +1,14 @@
+---
+# Clang-Format Settings for SputteringACS Project
+Language: Cpp
+BasedOnStyle: LLVM
+BreakBeforeBraces: Allman
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 120
+SortIncludes: true
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+SpaceBeforeParens: ControlStatements
+AlignTrailingComments: true
